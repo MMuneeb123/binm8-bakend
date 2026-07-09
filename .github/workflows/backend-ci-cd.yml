@@ -1,0 +1,168 @@
+name: Backend CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-cicd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    name: Deploy Production
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    timeout-minutes: 30
+    environment: production
+
+    env:
+      PROD_HOST: ${{ secrets.PROD_HOST }}
+      PROD_USER: ${{ secrets.PROD_USER }}
+      PROD_APP_DIR: ${{ vars.PROD_APP_DIR || '/var/www/binm8-backend' }}
+      PROD_HEALTHCHECK_URL: ${{ vars.PROD_HEALTHCHECK_URL || 'https://api.binm8.com/api/v1/countries' }}
+      PROD_SSH_KEY_B64: ${{ secrets.PROD_SSH_KEY_B64 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deploy secrets
+        run: |
+          test -n "${PROD_HOST}" || (echo "Missing PROD_HOST secret" && exit 1)
+          test -n "${PROD_USER}" || (echo "Missing PROD_USER secret" && exit 1)
+          if [ -z "${{ secrets.PROD_SSH_KEY }}" ] && [ -z "${PROD_SSH_KEY_B64}" ]; then
+            echo "Missing SSH key secret: set PROD_SSH_KEY or PROD_SSH_KEY_B64"
+            exit 1
+          fi
+
+      - name: Setup SSH key
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          # Preferred: base64 secret to avoid newline/paste issues.
+          # Fallback: plain private key secret (multiline or literal \n escapes).
+          if [ -n "${PROD_SSH_KEY_B64}" ]; then
+            printf "%s" "${PROD_SSH_KEY_B64}" | tr -d '\r' | base64 -d > ~/.ssh/prod_key
+          elif [[ "${PROD_SSH_KEY}" == *"\\n"* ]]; then
+            printf "%b" "${PROD_SSH_KEY}" | tr -d '\r' > ~/.ssh/prod_key
+          else
+            printf "%s\n" "${PROD_SSH_KEY}" | tr -d '\r' > ~/.ssh/prod_key
+          fi
+
+          chmod 600 ~/.ssh/prod_key
+
+          # Fail fast with clearer message if secret content is invalid.
+          ssh-keygen -y -f ~/.ssh/prod_key > /dev/null
+          echo "Loaded deploy key fingerprint:"
+          ssh-keygen -lf ~/.ssh/prod_key
+
+          echo "SSH_KEY_FILE=$HOME/.ssh/prod_key" >> "$GITHUB_ENV"
+
+      - name: Add host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${PROD_HOST}" >> ~/.ssh/known_hosts
+
+      - name: SSH preflight
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "preflight attempt $i"
+            ssh \
+              -i "${SSH_KEY_FILE}" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o ConnectTimeout=25 \
+              -o ServerAliveInterval=5 \
+              -o ServerAliveCountMax=3 \
+              "${PROD_USER}@${PROD_HOST}" "echo preflight-ok && whoami && hostname" && exit 0
+            sleep 5
+          done
+          echo "SSH preflight failed after retries"
+          exit 1
+
+      - name: Sync code to server
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "rsync attempt $i"
+            rsync -avz --delete \
+              -e "ssh -i ${SSH_KEY_FILE} -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=25 -o ServerAliveInterval=5 -o ServerAliveCountMax=3" \
+              --exclude 'node_modules' \
+              --exclude '.git' \
+              --exclude '.env' \
+              --exclude '.env.*' \
+              --exclude '*.log' \
+              --exclude '.dockerignore' \
+              ./ "${PROD_USER}@${PROD_HOST}:${PROD_APP_DIR}/" && exit 0
+            sleep 5
+          done
+          echo "Rsync failed after retries"
+          exit 1
+
+      - name: Install and restart on server
+        run: |
+          for i in 1 2 3; do
+            echo "remote install/restart attempt $i"
+            ssh \
+              -i "${SSH_KEY_FILE}" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o ConnectTimeout=25 \
+              -o ServerAliveInterval=5 \
+              -o ServerAliveCountMax=3 \
+              "${PROD_USER}@${PROD_HOST}" "cd '${PROD_APP_DIR}' && npm install --omit=dev --legacy-peer-deps && (pm2 restart binm8-backend || pm2 start app.js --name binm8-backend) && pm2 save" && exit 0
+            sleep 5
+          done
+          echo "Remote install/restart failed after retries"
+          exit 1
+
+      - name: Remote smoke check
+        run: |
+          for i in 1 2 3; do
+            echo "remote smoke attempt $i"
+            ssh \
+              -i "${SSH_KEY_FILE}" \
+              -o BatchMode=yes \
+              -o IdentitiesOnly=yes \
+              -o ConnectTimeout=25 \
+              -o ServerAliveInterval=5 \
+              -o ServerAliveCountMax=3 \
+              "${PROD_USER}@${PROD_HOST}" "STATUS=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/v1/countries || true); echo \"remote_status=\$STATUS\"; [ \"\$STATUS\" = \"401\" ] || [ \"\$STATUS\" = \"200\" ]" && exit 0
+            sleep 3
+          done
+          echo "Remote smoke check failed after retries"
+          exit 1
+
+      - name: Public health check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "${PROD_HEALTHCHECK_URL}" || true)
+          echo "public_status=${STATUS}"
+          [ "${STATUS}" = "401" ] || [ "${STATUS}" = "200" ]

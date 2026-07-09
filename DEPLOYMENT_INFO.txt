@@ -1,0 +1,179 @@
+=====================================
+BINM8 BACKEND DEPLOYMENT - SUCCESS ✅
+=====================================
+
+Server Details:
+---------------
+IP Address: 213.165.92.224
+User: root
+OS: Ubuntu 24.04 LTS (Noble)
+
+Application Status:
+------------------
+✅ Application: RUNNING (PM2 managed)
+✅ Database: PostgreSQL 16 - CONFIGURED
+✅ Web Server: Nginx - CONFIGURED
+✅ Data: 4 countries & 317 councils seeded
+
+Installed Software:
+------------------
+- Node.js: v20.19.6
+- npm: v10.8.2
+- PostgreSQL: 16.11
+- PM2: Process Manager (Auto-restart enabled)
+- Nginx: Reverse Proxy Server
+
+Access URLs:
+-----------
+API Base URL: http://213.165.92.224
+API Endpoint Example: http://213.165.92.224/api/v1/councils/types
+Direct Port Access: http://213.165.92.224:3000
+
+Database Configuration:
+-----------------------
+Host: localhost
+Port: 5432
+Database: binm8_production
+User: binm8_user
+Password: binm8_secure_pass_2024
+
+Security Keys (IMPORTANT - SAVE THESE):
+--------------------------------------
+JWT_SECRET: ghoPjgYVdSyHJQSm9dkEUxnyqwfP6Qyp29u+2KnT5e8=
+ADMIN_TOKEN: KJ1OfEs5EyXNDBNwFwPAxoSo9C+KeBhRhbbcBLcXkiM=
+
+API Endpoints:
+-------------
+GET  /api/v1/councils - List all councils
+GET  /api/v1/councils/types - Get council types
+GET  /api/v1/countries - List countries
+POST /api/v1/auth/register - Register user
+POST /api/v1/auth/login - Login user
+POST /api/v1/auth/verify-email - Verify email OTP
+GET  /api/v1/bins - Get user bins (requires auth)
+POST /api/v1/bins - Add bin (requires auth)
+
+Management Commands:
+-------------------
+# SSH into server:
+ssh root@213.165.92.224
+
+# View PM2 status:
+pm2 status
+
+# View logs:
+pm2 logs binm8-backend
+
+# Restart application:
+pm2 restart binm8-backend
+
+# Stop application:
+pm2 stop binm8-backend
+
+# Start application:
+pm2 start binm8-backend
+
+# View Nginx status:
+systemctl status nginx
+
+# Restart Nginx:
+systemctl restart nginx
+
+# View Nginx logs:
+tail -f /var/log/nginx/error.log
+tail -f /var/log/nginx/access.log
+
+Application Files Location:
+--------------------------
+/var/www/binm8-backend/
+
+PM2 Configuration:
+-----------------
+- Auto-restart on failure: ✅ Enabled
+- Auto-start on server reboot: ✅ Enabled
+- Process name: binm8-backend
+
+Firebase Push Notifications:
+---------------------------
+✅ Configured and active
+Scheduled at: 6:00 AM and 6:00 PM daily (production mode)
+
+Email Service:
+-------------
+Provider: Mailtrap
+From Name: BinM8
+From Email: hello@binm8.com
+
+Test Command:
+------------
+curl http://213.165.92.224/api/v1/councils/types
+
+Expected Response:
+{
+  "status": "success",
+  "message": "Success",
+  "data": [
+    {"value": "Metropolitan District", "label": "Metropolitan District"},
+    ...
+  ]
+}
+
+Next Steps:
+----------
+1. Update your Flutter app to use: http://213.165.92.224
+2. Test all API endpoints
+3. Configure SSL certificate (optional, recommended for production)
+4. Set up monitoring and alerts
+5. Configure automatic backups for PostgreSQL database
+
+SSL Setup (Recommended):
+-----------------------
+To enable HTTPS, install Let's Encrypt certificate:
+
+1. Install Certbot:
+   apt install certbot python3-certbot-nginx
+
+2. Get certificate (requires domain name):
+   certbot --nginx -d yourdomain.com
+
+Monitoring:
+----------
+- PM2 Monitor: pm2 monit
+- System Monitor: htop
+- Database: psql -U binm8_user -d binm8_production
+
+Database Backup:
+---------------
+# Backup command:
+pg_dump -U binm8_user binm8_production > backup_$(date +%Y%m%d).sql
+
+# Restore command:
+psql -U binm8_user binm8_production < backup_YYYYMMDD.sql
+
+Troubleshooting:
+---------------
+# If app not responding:
+pm2 restart binm8-backend
+
+# If database connection fails:
+systemctl status postgresql
+
+# If Nginx not working:
+systemctl status nginx
+nginx -t
+
+# Check application logs:
+pm2 logs binm8-backend --lines 100
+
+Production Notes:
+----------------
+- Application running in PRODUCTION mode
+- Database logging disabled for performance
+- PM2 will auto-restart on crashes
+- Server will auto-start application on reboot
+- Firebase notifications scheduled automatically
+
+=====================================
+DEPLOYMENT COMPLETED SUCCESSFULLY! 🎉
+=====================================
+

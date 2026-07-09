@@ -1,0 +1,28 @@
+{
+  "watch": [
+    "app",
+    "app.js"
+  ],
+  "ext": "js,json",
+  "ignore": [
+    "node_modules",
+    "*.log",
+    "*.md",
+    ".git",
+    ".env",
+    "logs",
+    "scripts",
+    "test",
+    "tests",
+    "*.test.js",
+    "*.spec.js",
+    "Dockerfile",
+    "docker-compose.yml",
+    ".dockerignore",
+    "start-postgres.sh",
+    "test-network.sh"
+  ],
+  "delay": 1000,
+  "verbose": false
+}
+
