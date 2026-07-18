@@ -52,6 +52,18 @@ const emailTemplates = {
  * Send an email using the specified template
  */
 export const sendEmail = async (to, type, code) => {
+
+    // Email send karne wale function ke andar bilkul top par yeh lagayein:
+console.log("=== EMAIL CONFIGURATION DEBUG ===");
+console.log("SMTP_HOST:", process.env.SMTP_HOST);
+console.log("SMTP_PORT:", process.env.SMTP_PORT);
+console.log("SMTP_USER:", process.env.SMTP_USER);
+// Password ka sirf pehla aur aakhri letter dikhayega taake security ka masla na ho:
+const pass = process.env.SMTP_PASS || "";
+console.log("SMTP_PASS LENGTH:", pass.length);
+console.log("SMTP_PASS MASKED:", pass);
+console.log("=================================");
+
     const template = emailTemplates[type];
     if (!template) {
         throw new Error(`Invalid email template type: ${type}`);
@@ -66,7 +78,7 @@ export const sendEmail = async (to, type, code) => {
         subject: template.subject,
         html: template.generateHtml(code)
     };
-
+  
     try {
         const info = await transporter.sendMail(mailOptions);
         console.log('Email sent successfully:', info.messageId);

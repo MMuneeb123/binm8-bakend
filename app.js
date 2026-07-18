@@ -41,6 +41,9 @@ const corsOptions = {
                 'http://www.binm8.com',
                 'http://213.165.92.224',
                 'https://213.165.92.224',
+                // Added server IP for new deployment
+                'http://178.105.192.226',
+                'https://178.105.192.226',
                 // Add your Flutter app URL when deployed
             ];
             
