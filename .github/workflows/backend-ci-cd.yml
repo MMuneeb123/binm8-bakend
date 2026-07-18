@@ -31,21 +31,6 @@ jobs:
         run: npm ci --legacy-peer-deps
 
       - name: Run tests
-        env:
-          PORT: 3000
-          NODE_ENV: production
-          DB_HOST: localhost
-          DB_PORT: 5432
-          DB_NAME: fake_db
-          DB_USER: fake_user
-          DB_PASSWORD: fake_password
-          JWT_SECRET: fake_secret_key_for_testing
-          ADMIN_REGISTRATION_TOKEN: fake_token
-          SMTP_HOST: smtp.gmail.com
-          SMTP_PORT: 587
-          SMTP_SECURE: false
-          SMTP_USER: tech@techbitess.com
-          SMTP_PASS: fake_smtp_password
         run: npm test
 
   deploy:
