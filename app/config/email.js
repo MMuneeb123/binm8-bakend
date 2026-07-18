@@ -1,14 +1,16 @@
 import nodemailer from 'nodemailer';
-import { MailtrapTransport } from 'mailtrap';
 import config from './config.js';
 
-// Create reusable transporter object using Mailtrap API
-const transporter = nodemailer.createTransport(
-    MailtrapTransport({
-        token: config.email.mailtrap.token
-    })
-);
-
+// Reusable generic SMTP transporter mapping config fields
+const transporter = nodemailer.createTransport({
+    host: config.email.smtp.host,
+    port: config.email.smtp.port,
+    secure: config.email.smtp.secure,
+    auth: {
+        user: config.email.smtp.auth.user,
+        pass: config.email.smtp.auth.pass
+    }
+});
 
 // Email templates
 const emailTemplates = {
@@ -48,21 +50,8 @@ const emailTemplates = {
 
 /**
  * Send an email using the specified template
- * @param {string} to - Recipient email address
- * @param {string} type - Email type ('verification' or 'passwordReset')
- * @param {string} code - Verification or reset code
- * @returns {Promise<void>}
  */
 export const sendEmail = async (to, type, code) => {
-    // const info = await transporter.sendMail({
-    //     from: '"Maddison Foo Koch" <maddison53@ethereal.email>',
-    //     to: "asnake.assefa.official.@gmail.com",
-    //     subject: "Hello ✔",
-    //     text: "Hello world?", // plain‑text body
-    //     html: "<b>Hello world?</b>", // HTML body
-    //   });
-
-    // return 
     const template = emailTemplates[type];
     if (!template) {
         throw new Error(`Invalid email template type: ${type}`);
@@ -75,8 +64,7 @@ export const sendEmail = async (to, type, code) => {
         },
         to,
         subject: template.subject,
-        html: template.generateHtml(code),
-        category: 'Email Verification'
+        html: template.generateHtml(code)
     };
 
     try {
@@ -90,7 +78,6 @@ export const sendEmail = async (to, type, code) => {
 
 /**
  * Verify email configuration
- * @returns {Promise<void>}
  */
 export const verifyEmailConfig = async () => {
     try {
@@ -105,4 +92,4 @@ export const verifyEmailConfig = async () => {
 export default {
     sendEmail,
     verifyEmailConfig
-}; 
+};

@@ -67,14 +67,30 @@ const config = {
         registrationToken: process.env.ADMIN_REGISTRATION_TOKEN
     },
 
-    // Email configuration - Mailtrap API
+    // // Email configuration - Mailtrap API
+    // email: {
+    //     mailtrap: {
+    //         token: process.env.MAILTRAP_API_TOKEN
+    //     },
+    //     from: {
+    //         name: process.env.EMAIL_FROM_NAME || 'BinM8',
+    //         email: process.env.EMAIL_FROM_EMAIL || 'hello@binm8.com'
+    //     }
+    // },
+    // Email configuration - Updated to Google/Generic SMTP
     email: {
-        mailtrap: {
-            token: process.env.MAILTRAP_API_TOKEN
+        smtp: {
+            host: process.env.SMTP_HOST || 'smtp.gmail.com',
+            port: parseInt(process.env.SMTP_PORT || '587', 10),
+            secure: process.env.SMTP_SECURE === 'true', // port 587 ke liye false (TLS)
+            auth: {
+                user: process.env.SMTP_USER,
+                pass: process.env.SMTP_PASS
+            }
         },
         from: {
             name: process.env.EMAIL_FROM_NAME || 'BinM8',
-            email: process.env.EMAIL_FROM_EMAIL || 'hello@binm8.com'
+            email: process.env.EMAIL_FROM_EMAIL || 'tech@techbitess.com'
         }
     },
 
