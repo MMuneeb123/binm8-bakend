@@ -8,7 +8,6 @@ export default (sequelize, DataTypes) => {
         name: {
             type: DataTypes.STRING,
             allowNull: false,
-            unique: true,
             comment: 'Full name of the council (e.g., "Barnsley Borough Council")'
         },
         type: {

@@ -8,6 +8,7 @@ import holidayModel from "./holiday_model.js";
 import otpModel from "./otp_model.js";
 import councilModel from "./council_model.js";
 import userStreakModel from "./user_streak_model.js";
+import subscriptionModel from "./subscription_model.js"; // 👈 Added Subscription Model
 
 const sequelize = new Sequelize(
   config.database.name,
@@ -42,6 +43,7 @@ db.Holiday = holidayModel(sequelize, Sequelize);
 db.OTP = otpModel(sequelize, Sequelize);
 db.Council = councilModel(sequelize, Sequelize);
 db.UserStreak = userStreakModel(sequelize, Sequelize);
+db.Subscription = subscriptionModel(sequelize, Sequelize); // 👈 Initialized Subscription Model
 
 // Define associations
 db.User.hasMany(db.UserBin, { foreignKey: "userId", onDelete: "CASCADE" });
@@ -62,6 +64,10 @@ db.Council.hasMany(db.User, { foreignKey: "councilId" });
 db.User.hasOne(db.UserStreak, { foreignKey: "userId", onDelete: "CASCADE" });
 db.UserStreak.belongsTo(db.User, { foreignKey: "userId", onDelete: "CASCADE" });
 
+// 👈 Subscription Associations
+db.User.hasMany(db.Subscription, { foreignKey: "userId", onDelete: "CASCADE" });
+db.Subscription.belongsTo(db.User, { foreignKey: "userId", onDelete: "CASCADE" });
+
 // Test database connection
 sequelize
   .authenticate()
@@ -75,7 +81,7 @@ sequelize
 // Sync all models with database
 sequelize
   // .sync({ force: true }) // Set to true to drop tables on each sync
-  .sync(process.env.NODE_ENV === "production" ? {} : { alter: true })
+  .sync(process.env.NODE_ENV === "production" ? {} : { alter: false })
   .then(() => {
     console.log("✅ Database & tables created!");
   })
@@ -84,4 +90,4 @@ sequelize
   });
 
 export default db;
-export const { User, BinType, UserBin, Country, Holiday, OTP, Council, UserStreak } = db;
+export const { User, BinType, UserBin, Country, Holiday, OTP, Council, UserStreak, Subscription } = db;

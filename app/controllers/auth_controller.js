@@ -2,7 +2,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { Op } from "sequelize";
-import { User, OTP } from "../models/index.js";
+import { User, OTP,Subscription } from "../models/index.js";
 import config from "../config/config.js";
 import { sendEmail } from "../config/email.js";
 import {
@@ -170,6 +170,19 @@ export async function register(req, res) {
       code: otpCode,
       type: "EMAIL_VERIFICATION",
       expiresAt,
+    });
+    // add Subscription for new user
+    // Registration function ke andar User creation ke turant baad:
+    const trialDays = 7; // 7 din ka trial
+    const endsAt = new Date();
+    endsAt.setDate(endsAt.getDate() + trialDays);
+
+    await Subscription.create({
+        userId: newUser.id,
+        planType: 'FREE_TRIAL',
+        status: 'TRIAL',
+        startsAt: new Date(),
+        endsAt: endsAt,
     });
 
     // Send verification email using new email service

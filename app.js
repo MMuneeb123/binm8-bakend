@@ -13,7 +13,7 @@ import councilRoutes from './app/routes/council_routes.js';
 import streakRoutes from './app/routes/streak_routes.js';
 import config from './app/config/config.js';
 import './app/cron/collection_cron.js';
-
+import subscriptionRoutes from './app/routes/subscription_routes.js';
 const app = express();
 
 // Trust proxy - Required for rate limiting behind Nginx
@@ -95,6 +95,7 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/countries", countryRoutes);
 app.use("/api/v1/councils", councilRoutes);
 app.use("/api/v1/streaks", streakRoutes);
+app.use("/api/v1/subscriptions", subscriptionRoutes);
 
 // Verify Sentry (non-production only)
 if (!config.server.isProduction) {
