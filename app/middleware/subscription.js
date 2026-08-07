@@ -7,7 +7,7 @@ export const checkSubscription = async (req, res, next) => {
 
         const subscription = await Subscription.findOne({
             where: { userId },
-            order: [['created_at', 'DESC']],
+            order: [['createdAt', 'DESC']],
         });
 
         if (!subscription) {

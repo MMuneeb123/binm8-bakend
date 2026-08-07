@@ -1,54 +1,3 @@
-// import { DataTypes } from 'sequelize';
-// import sequelize from '../config/database.js'; // Ensure target path matches your sequelize connection config
-
-// const Subscription = sequelize.define('Subscription', {
-//     id: {
-//         type: DataTypes.INTEGER,
-//         primaryKey: true,
-//         autoIncrement: true
-//     },
-//     user_id: {
-//         type: DataTypes.INTEGER,
-//         allowNull: false,
-//         references: {
-//             model: 'Users',
-//             key: 'id'
-//         },
-//         onDelete: 'CASCADE'
-//     },
-//     plan_type: {
-//         type: DataTypes.ENUM('FREE_TRIAL', 'MONTHLY', 'YEARLY'),
-//         defaultValue: 'FREE_TRIAL'
-//     },
-//     status: {
-//         type: DataTypes.ENUM('TRIAL', 'ACTIVE', 'EXPIRED', 'CANCELLED'),
-//         defaultValue: 'TRIAL'
-//     },
-//     starts_at: {
-//         type: DataTypes.DATE,
-//         defaultValue: DataTypes.NOW
-//     },
-//     ends_at: {
-//         type: DataTypes.DATE,
-//         allowNull: false
-//     },
-//     payment_provider: {
-//         type: DataTypes.STRING(50),
-//         allowNull: true
-//     },
-//     transaction_id: {
-//         type: DataTypes.STRING(255),
-//         allowNull: true
-//     }
-// }, {
-//     tableName: 'Subscriptions',
-//     timestamps: true,
-//     createdAt: 'created_at',
-//     updatedAt: 'updated_at'
-// });
-
-// export default Subscription;
-
 export default (sequelize, Sequelize) => {
     const Subscription = sequelize.define('Subscription', {
         id: {
@@ -59,7 +8,6 @@ export default (sequelize, Sequelize) => {
         userId: {
             type: Sequelize.INTEGER,
             allowNull: false,
-            field: 'user_id',
             references: {
                 model: 'Users',
                 key: 'id'
@@ -68,8 +16,7 @@ export default (sequelize, Sequelize) => {
         },
         planType: {
             type: Sequelize.ENUM('FREE_TRIAL', 'MONTHLY', 'YEARLY'),
-            defaultValue: 'FREE_TRIAL',
-            field: 'plan_type'
+            defaultValue: 'FREE_TRIAL'
         },
         status: {
             type: Sequelize.ENUM('TRIAL', 'ACTIVE', 'EXPIRED', 'CANCELLED'),
@@ -77,29 +24,28 @@ export default (sequelize, Sequelize) => {
         },
         startsAt: {
             type: Sequelize.DATE,
-            defaultValue: Sequelize.NOW,
-            field: 'starts_at'
+            defaultValue: Sequelize.NOW
         },
         endsAt: {
             type: Sequelize.DATE,
-            allowNull: false,
-            field: 'ends_at'
+            allowNull: false
         },
         paymentProvider: {
             type: Sequelize.STRING(50),
-            allowNull: true,
-            field: 'payment_provider'
+            allowNull: true
         },
         transactionId: {
             type: Sequelize.STRING(255),
-            allowNull: true,
-            field: 'transaction_id'
+            allowNull: true
+        },
+        amount: {
+            type: Sequelize.DECIMAL(10, 2),
+            allowNull: false,
+            defaultValue: 0.00
         }
     }, {
         tableName: 'Subscriptions',
-        timestamps: true,
-        createdAt: 'created_at',
-        updatedAt: 'updated_at'
+        timestamps: true // Yeh by default 'createdAt' aur 'updatedAt' search karega
     });
 
     return Subscription;

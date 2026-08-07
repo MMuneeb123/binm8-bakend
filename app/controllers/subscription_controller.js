@@ -7,7 +7,7 @@ export const getSubscriptionStatus = async (req, res) => {
         const userId = req.user.id;
         const sub = await Subscription.findOne({
             where: { userId },
-            order: [['created_at', 'DESC']],
+            order: [['createdAt', 'DESC']],
         });
 
         if (!sub) {
@@ -33,7 +33,7 @@ export const getSubscriptionStatus = async (req, res) => {
 export const updateSubscription = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { planType, paymentProvider, transactionId } = req.body;
+        const { planType, paymentProvider, transactionId , amount} = req.body;
 
         if (!['MONTHLY', 'YEARLY'].includes(planType)) {
             return errorResponse(res, 'Invalid plan type', 400);
@@ -54,6 +54,7 @@ export const updateSubscription = async (req, res) => {
             status: 'ACTIVE',
             startsAt: now,
             endsAt,
+            amount,
             paymentProvider: paymentProvider || 'in_app',
             transactionId: transactionId || null,
         });

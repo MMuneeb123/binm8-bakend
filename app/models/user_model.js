@@ -63,5 +63,11 @@ export default (sequelize, DataTypes) => {
       comment:
         "Up to 6 reminders: [{ enabled, offsetDays, localTime }]. null = use server defaults",
     },
+    isActive: {
+  type: DataTypes.BOOLEAN,
+  defaultValue: true,
+  allowNull: false,
+  field: 'isactive'
+}
   });
 };

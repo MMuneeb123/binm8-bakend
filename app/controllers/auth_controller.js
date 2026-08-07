@@ -179,10 +179,11 @@ export async function register(req, res) {
 
     await Subscription.create({
         userId: newUser.id,
-        planType: 'FREE_TRIAL',
-        status: 'TRIAL',
+        planType: 'MONTHLY',
+        status: 'ACTIVE',
         startsAt: new Date(),
         endsAt: endsAt,
+        amount: 190.00 // Free trial ke liye amount 0.00
     });
 
     // Send verification email using new email service
