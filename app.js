@@ -14,6 +14,8 @@ import streakRoutes from './app/routes/streak_routes.js';
 import config from './app/config/config.js';
 import './app/cron/collection_cron.js';
 import subscriptionRoutes from './app/routes/subscription_routes.js';
+import adminDashboardRoutes from './app/routes/admin_dashboard_routes.js';
+import adminRoutes  from './app/routes/admin_routes.js' // Path check karein
 const app = express();
 
 // Trust proxy - Required for rate limiting behind Nginx
@@ -96,7 +98,8 @@ app.use("/api/v1/countries", countryRoutes);
 app.use("/api/v1/councils", councilRoutes);
 app.use("/api/v1/streaks", streakRoutes);
 app.use("/api/v1/subscriptions", subscriptionRoutes);
-
+app.use("/api/v1/admin/dashboard", adminDashboardRoutes);
+app.use('/api/v1/admin', adminRoutes);
 // Verify Sentry (non-production only)
 if (!config.server.isProduction) {
     app.get("/debug-sentry", () => {
