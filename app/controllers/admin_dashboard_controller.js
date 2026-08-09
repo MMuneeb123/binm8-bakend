@@ -12,16 +12,15 @@ export const getDashboardOverview = async (req, res) => {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
-        const yesterdayStart = new Date();
+        const yesterdayStart = new Date(todayStart);
         yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-        yesterdayStart.setHours(0, 0, 0, 0);
 
-        const lastWeekStart = new Date();
+        const lastWeekStart = new Date(todayStart);
         lastWeekStart.setDate(lastWeekStart.getDate() - 7);
 
         // --- Quick Bar Stats ---
-        // Active session tracking using recently updated users (last 15 mins)
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+        
         const activeSessions = await User.count({
             where: { updatedAt: { [Op.gte]: fifteenMinutesAgo } }
         });
@@ -33,6 +32,7 @@ export const getDashboardOverview = async (req, res) => {
         // Renewals due in next 3 days
         const threeDaysLater = new Date();
         threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+        
         const renewalsDue = await Subscription.count({
             where: {
                 status: 'ACTIVE',
@@ -41,7 +41,6 @@ export const getDashboardOverview = async (req, res) => {
         });
 
         // --- Main KPI Stats ---
-        // 1. Total Users & % change from yesterday
         const totalUsers = await User.count();
         const usersYesterday = await User.count({ 
             where: { createdAt: { [Op.lt]: todayStart } } 
@@ -50,7 +49,6 @@ export const getDashboardOverview = async (req, res) => {
             ? (((totalUsers - usersYesterday) / usersYesterday) * 100).toFixed(1) 
             : '0.0';
 
-        // 2. Paid Users & % change from last week
         const paidUsers = await Subscription.count({ 
             where: { status: 'ACTIVE' } 
         });
@@ -61,7 +59,6 @@ export const getDashboardOverview = async (req, res) => {
             ? (((paidUsers - paidUsersLastWeek) / paidUsersLastWeek) * 100).toFixed(1) 
             : '0.0';
 
-        // 3. Trial Users & % change from yesterday
         const trialUsers = await Subscription.count({ 
             where: { status: 'FREE_TRIAL' } 
         });
@@ -72,7 +69,6 @@ export const getDashboardOverview = async (req, res) => {
             ? (((trialUsers - trialYesterday) / trialYesterday) * 100).toFixed(1) 
             : '0.0';
 
-        // 4. Total Councils & % change from yesterday
         const totalCouncils = await Council.count();
         const councilsYesterday = await Council.count({ 
             where: { createdAt: { [Op.lt]: todayStart } } 
@@ -120,25 +116,24 @@ export const getDashboardOverview = async (req, res) => {
  */
 export const getRecentActivity = async (req, res) => {
     try {
-        const recentUsers = await User.findAll({
-            limit: 5,
-            order: [['createdAt', 'DESC']],
-            attributes: ['id', 'fullName', 'email', 'createdAt']
-        });
+        const [recentUsers, recentCouncils, recentSubscriptions] = await Promise.all([
+            User.findAll({
+                limit: 5,
+                order: [['createdAt', 'DESC']],
+                attributes: ['id', 'fullName', 'email', 'createdAt']
+            }),
+            Council.findAll({
+                limit: 5,
+                order: [['createdAt', 'DESC']],
+                attributes: ['id', 'name', 'createdAt']
+            }),
+            Subscription.findAll({
+                limit: 5,
+                order: [['createdAt', 'DESC']],
+                attributes: ['id', 'userId', 'planType', 'amount', 'createdAt']
+            })
+        ]);
 
-        const recentCouncils = await Council.findAll({
-            limit: 5,
-            order: [['createdAt', 'DESC']],
-            attributes: ['id', 'name', 'createdAt']
-        });
-
-        const recentSubscriptions = await Subscription.findAll({
-            limit: 5,
-            order: [['createdAt', 'DESC']],
-            attributes: ['id', 'userId', 'planType', 'amount', 'createdAt']
-        });
-
-        // Event Logs Array Formatting
         const activities = [
             ...recentUsers.map(u => ({
                 id: `user_${u.id}`,
@@ -179,6 +174,26 @@ export const getDashboardAnalytics = async (req, res) => {
         const currentYear = new Date().getFullYear();
         const startOfYear = new Date(`${currentYear}-01-01T00:00:00.000Z`);
 
+        // Get array of months from January to Current Month (e.g., Jan to Aug)
+        const allMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const currentMonthIndex = new Date().getMonth();
+        const monthsToInclude = allMonths.slice(0, currentMonthIndex + 1);
+
+        // Helper function to fill missing 0s
+        const formatChartData = (rawDbData, keyName, isInteger = false) => {
+            return monthsToInclude.map(monthName => {
+                const existing = rawDbData.find(item => (item.month ? item.month.trim() : '') === monthName);
+                let value = 0;
+                if (existing && existing[keyName]) {
+                    value = isInteger ? parseInt(existing[keyName], 10) : parseFloat(existing[keyName]);
+                }
+                return {
+                    month: monthName,
+                    [keyName]: value
+                };
+            });
+        };
+
         // --- 1. DYNAMIC REVENUE CHART ---
         const monthlyRevenueRaw = await Subscription.findAll({
             attributes: [
@@ -198,10 +213,8 @@ export const getDashboardAnalytics = async (req, res) => {
             raw: true
         });
 
-        const revenueChart = monthlyRevenueRaw.map(item => ({
-            month: item.month ? item.month.trim() : '',
-            revenue: parseFloat(item.revenue || 0)
-        }));
+        // Apply 0 fill formatting
+        const revenueChart = formatChartData(monthlyRevenueRaw, 'revenue', false);
 
         // --- 2. DYNAMIC USER LEADS GROWTH ---
         const monthlyLeadsRaw = await User.findAll({
@@ -221,15 +234,15 @@ export const getDashboardAnalytics = async (req, res) => {
             raw: true
         });
 
-        const userLeadsGrowthChart = monthlyLeadsRaw.map(item => ({
-            month: item.month ? item.month.trim() : '',
-            leads: parseInt(item.leads || 0, 10)
-        }));
+        // Apply 0 fill formatting
+        const userLeadsGrowthChart = formatChartData(monthlyLeadsRaw, 'leads', true);
         
         // --- 3. DYNAMIC MEMBERSHIP BREAKDOWN ---
-        const yearlyCount = await Subscription.count({ where: { planType: 'YEARLY', status: 'ACTIVE' } });
-        const monthlyCount = await Subscription.count({ where: { planType: 'MONTHLY', status: 'ACTIVE' } });
-        const trialCount = await Subscription.count({ where: { planType: 'FREE_TRIAL', status: 'TRIAL' } });
+        const [yearlyCount, monthlyCount, trialCount] = await Promise.all([
+            Subscription.count({ where: { planType: 'YEARLY', status: 'ACTIVE' } }),
+            Subscription.count({ where: { planType: 'MONTHLY', status: 'ACTIVE' } }),
+            Subscription.count({ where: { planType: 'FREE_TRIAL', status: 'TRIAL' } })
+        ]);
 
         const totalSubs = yearlyCount + monthlyCount + trialCount || 1;
 
@@ -310,16 +323,31 @@ export const getSystemUsers = async (req, res) => {
             ];
         }
 
-        // Include Subscription table with latest order first
+        // Apply Subscription Filters at the Database Level
+        const subWhereClause = {};
+        let isSubRequired = false;
+
+        const filterKey = filter.toLowerCase();
+        if (filterKey === 'yearly' || filterKey === 'yearly premium') {
+            subWhereClause.planType = { [Op.iLike]: '%year%' };
+            subWhereClause.status = 'ACTIVE';
+            isSubRequired = true;
+        } else if (filterKey === 'monthly' || filterKey === '1 month premium') {
+            subWhereClause.planType = { [Op.iLike]: '%month%' };
+            subWhereClause.status = 'ACTIVE';
+            isSubRequired = true;
+        } 
+
         const includeOption = [
             {
                 model: Subscription,
-                required: false,
+                required: isSubRequired, // Force INNER JOIN if specific plan is requested
+                where: Object.keys(subWhereClause).length ? subWhereClause : undefined,
                 order: [['createdAt', 'DESC']]
             }
         ];
 
-        // Fetch users from DB
+        // Fetch users from DB with proper pagination
         const { count, rows: users } = await User.findAndCountAll({
             where: whereClause,
             include: includeOption,
@@ -332,30 +360,26 @@ export const getSystemUsers = async (req, res) => {
         // Map and resolve membership status
         let formattedUsers = users.map((user) => {
             let membership = 'Normal';
-
-            // Extract subscription record
             let sub = null;
+
             if (Array.isArray(user.Subscriptions) && user.Subscriptions.length > 0) {
                 sub = user.Subscriptions[0];
-            } else if (Array.isArray(user.subscriptions) && user.subscriptions.length > 0) {
-                sub = user.subscriptions[0];
-            } else if (user.Subscription || user.subscription) {
-                sub = user.Subscription || user.subscription;
+            } else if (user.Subscription) {
+                sub = user.Subscription;
             }
 
-            // Check if subscription is active and determine plan type
             if (sub) {
                 const subStatus = (sub.status || '').toLowerCase();
-                const plan = (sub.planType || sub.plan_type || sub.plan || '').toLowerCase();
+                const plan = (sub.planType || '').toLowerCase();
                 const isExpired = sub.expiresAt && new Date(sub.expiresAt) < new Date();
 
-                if (subStatus === 'active' || subStatus === 'active_recurring' || !isExpired) {
+                if (subStatus === 'active' || !isExpired) {
                     if (plan.includes('year') || plan === 'yearly') {
                         membership = 'Yearly Premium';
                     } else if (plan.includes('month') || plan === 'monthly') {
                         membership = '1 Month Premium';
                     } else if (plan) {
-                        membership = sub.planType || sub.plan;
+                        membership = sub.planType;
                     }
                 }
             }
@@ -370,21 +394,9 @@ export const getSystemUsers = async (req, res) => {
             };
         });
 
-        // Apply Tab Filter ('all' | 'yearly' | 'monthly' | 'normal')
-        if (filter && filter.toLowerCase() !== 'all') {
-            const filterKey = filter.toLowerCase();
-            formattedUsers = formattedUsers.filter(u => {
-                if (filterKey === 'yearly' || filterKey === 'yearly premium') {
-                    return u.membership === 'Yearly Premium';
-                }
-                if (filterKey === 'monthly' || filterKey === '1 month premium') {
-                    return u.membership === '1 Month Premium';
-                }
-                if (filterKey === 'normal') {
-                    return u.membership === 'Normal';
-                }
-                return true;
-            });
+        // Retain normal filter for users who don't have active subscriptions
+        if (filterKey === 'normal') {
+            formattedUsers = formattedUsers.filter(u => u.membership === 'Normal');
         }
 
         return successResponse(res, 'System users fetched successfully', {
