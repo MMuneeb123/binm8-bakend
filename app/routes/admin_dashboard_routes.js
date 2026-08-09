@@ -4,7 +4,7 @@ import { Router } from 'express';
 import {
     getDashboardOverview,
     getRecentActivity,
-    getDashboardAnalytics
+    getDashboardAnalytics,getSystemUsers
 } from '../controllers/admin_dashboard_controller.js';
 
 const router = Router();
@@ -15,5 +15,10 @@ const router = Router();
 router.get('/overview', getDashboardOverview);
 router.get('/activity', getRecentActivity);
 router.get('/analytics', getDashboardAnalytics);
+
+
+// 
+
+router.get('/system-users', getSystemUsers);
 
 export default router;

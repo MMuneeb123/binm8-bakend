@@ -290,3 +290,116 @@ export const getDashboardAnalytics = async (req, res) => {
         return errorResponse(res, err.message, 500);
     }
 };
+
+
+// 
+export const getSystemUsers = async (req, res) => {
+    try {
+        const { filter = 'all', page = 1, limit = 10, search = '' } = req.query;
+
+        const pageNum = parseInt(page, 10) || 1;
+        const limitNum = parseInt(limit, 10) || 10;
+        const offset = (pageNum - 1) * limitNum;
+
+        // Search filter (Name or Email)
+        const whereClause = {};
+        if (search) {
+            whereClause[Op.or] = [
+                { name: { [Op.iLike]: `%${search}%` } },
+                { email: { [Op.iLike]: `%${search}%` } }
+            ];
+        }
+
+        // Include Subscription table with latest order first
+        const includeOption = [
+            {
+                model: Subscription,
+                required: false,
+                order: [['createdAt', 'DESC']]
+            }
+        ];
+
+        // Fetch users from DB
+        const { count, rows: users } = await User.findAndCountAll({
+            where: whereClause,
+            include: includeOption,
+            limit: limitNum,
+            offset: offset,
+            order: [['createdAt', 'DESC']],
+            distinct: true
+        });
+
+        // Map and resolve membership status
+        let formattedUsers = users.map((user) => {
+            let membership = 'Normal';
+
+            // Extract subscription record (Handles both Array and Object relationships)
+            let sub = null;
+            if (Array.isArray(user.Subscriptions) && user.Subscriptions.length > 0) {
+                sub = user.Subscriptions[0];
+            } else if (Array.isArray(user.subscriptions) && user.subscriptions.length > 0) {
+                sub = user.subscriptions[0];
+            } else if (user.Subscription || user.subscription) {
+                sub = user.Subscription || user.subscription;
+            }
+
+            // Check if subscription is active and determine plan type
+            if (sub) {
+                const subStatus = (sub.status || '').toLowerCase();
+                const plan = (sub.planType || sub.plan_type || sub.plan || '').toLowerCase();
+                const isExpired = sub.expiresAt && new Date(sub.expiresAt) < new Date();
+
+                if (subStatus === 'active' || subStatus === 'active_recurring' || !isExpired) {
+                    if (plan.includes('year') || plan === 'yearly') {
+                        membership = 'Yearly Premium';
+                    } else if (plan.includes('month') || plan === 'monthly') {
+                        membership = '1 Month Premium';
+                    } else if (plan) {
+                        membership = sub.planType || sub.plan;
+                    }
+                }
+            }
+
+          
+            return {
+                userCode: `USR-${user.id}`,
+                name: user.fullName,
+                email: user.email,
+                membership: membership,
+                status: user.isActive !== false ? 'Member Active' : 'Inactive',
+                createdAt: user.createdAt
+            };
+        });
+
+        // Apply Tab Filter ('all' | 'yearly' | 'monthly' | 'normal')
+        if (filter && filter.toLowerCase() !== 'all') {
+            const filterKey = filter.toLowerCase();
+            formattedUsers = formattedUsers.filter(u => {
+                if (filterKey === 'yearly' || filterKey === 'yearly premium') {
+                    return u.membership === 'Yearly Premium';
+                }
+                if (filterKey === 'monthly' || filterKey === '1 month premium') {
+                    return u.membership === '1 Month Premium';
+                }
+                if (filterKey === 'normal') {
+                    return u.membership === 'Normal';
+                }
+                return true;
+            });
+        }
+
+        return successResponse(res, 'System users fetched successfully', {
+            users: formattedUsers,
+            pagination: {
+                totalUsers: count,
+                currentPage: pageNum,
+                totalPages: Math.ceil(count / limitNum),
+                limit: limitNum
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching system users:', error);
+        return errorResponse(res, error.message || 'Failed to fetch system users', 500);
+    }
+};
