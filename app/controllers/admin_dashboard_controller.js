@@ -142,7 +142,7 @@ export const getRecentActivity = async (req, res) => {
         const activities = [
             ...recentUsers.map(u => ({
                 id: `user_${u.id}`,
-                title: `${u.name || 'New Member'} joined`,
+                title: `${u.fullName || 'New Member'} joined`,
                 subtitle: u.email,
                 timestamp: u.createdAt,
                 type: 'USER_JOIN'
@@ -225,14 +225,13 @@ export const getDashboardAnalytics = async (req, res) => {
             month: item.month ? item.month.trim() : '',
             leads: parseInt(item.leads || 0, 10)
         }));
-
+        
         // --- 3. DYNAMIC MEMBERSHIP BREAKDOWN ---
         const yearlyCount = await Subscription.count({ where: { planType: 'YEARLY', status: 'ACTIVE' } });
         const monthlyCount = await Subscription.count({ where: { planType: 'MONTHLY', status: 'ACTIVE' } });
-        const trialCount = await Subscription.count({ where: { planType: 'FREE_TRIAL', status: 'FREE_TRIAL' } });
-        const adminCount = await User.count({ where: { role: 'ADMIN' } });
+        const trialCount = await Subscription.count({ where: { planType: 'FREE_TRIAL', status: 'TRIAL' } });
 
-        const totalSubs = yearlyCount + monthlyCount + trialCount + adminCount || 1;
+        const totalSubs = yearlyCount + monthlyCount + trialCount || 1;
 
         const membershipBreakdown = {
             yearlyPremium: { 
@@ -246,32 +245,32 @@ export const getDashboardAnalytics = async (req, res) => {
             trial: { 
                 count: trialCount, 
                 percentage: Math.round((trialCount / totalSubs) * 100) 
-            },
-            admin: { 
-                count: adminCount, 
-                percentage: Math.round((adminCount / totalSubs) * 100) 
             }
         };
 
-        // --- 4. DYNAMIC TOP COUNCILS ---
+        // --- 4. DYNAMIC TOP COUNCILS (FIXED ASSOCIATIONS) ---
         const topCouncilsRaw = await Council.findAll({
             attributes: [
                 'id', 
                 'name',
-                [Sequelize.fn('COUNT', Sequelize.col('UserBins.id')), 'membersCount']
+                [Sequelize.fn('COUNT', Sequelize.col('Users.UserBins.id')), 'membersCount']
             ],
             include: [{
-                model: UserBin,
-                attributes: []
+                model: User,
+                attributes: [],
+                include: [{
+                    model: UserBin,
+                    attributes: []
+                }]
             }],
             group: ['Council.id', 'Council.name'],
-            order: [[Sequelize.fn('COUNT', Sequelize.col('UserBins.id')), 'DESC']],
+            order: [[Sequelize.fn('COUNT', Sequelize.col('Users.UserBins.id')), 'DESC']],
             limit: 5,
             subQuery: false,
             raw: true
         });
 
-        const maxMembers = topCouncilsRaw[0]?.membersCount > 0 ? topCouncilsRaw[0].membersCount : 1;
+        const maxMembers = topCouncilsRaw[0]?.membersCount > 0 ? parseInt(topCouncilsRaw[0].membersCount, 10) : 1;
 
         const topCouncils = topCouncilsRaw.map((c, idx) => ({
             rank: idx + 1,
@@ -291,8 +290,9 @@ export const getDashboardAnalytics = async (req, res) => {
     }
 };
 
-
-// 
+/**
+ * 4. Get System Users List
+ */
 export const getSystemUsers = async (req, res) => {
     try {
         const { filter = 'all', page = 1, limit = 10, search = '' } = req.query;
@@ -305,7 +305,7 @@ export const getSystemUsers = async (req, res) => {
         const whereClause = {};
         if (search) {
             whereClause[Op.or] = [
-                { name: { [Op.iLike]: `%${search}%` } },
+                { fullName: { [Op.iLike]: `%${search}%` } },
                 { email: { [Op.iLike]: `%${search}%` } }
             ];
         }
@@ -333,7 +333,7 @@ export const getSystemUsers = async (req, res) => {
         let formattedUsers = users.map((user) => {
             let membership = 'Normal';
 
-            // Extract subscription record (Handles both Array and Object relationships)
+            // Extract subscription record
             let sub = null;
             if (Array.isArray(user.Subscriptions) && user.Subscriptions.length > 0) {
                 sub = user.Subscriptions[0];
@@ -360,7 +360,6 @@ export const getSystemUsers = async (req, res) => {
                 }
             }
 
-          
             return {
                 userCode: `USR-${user.id}`,
                 name: user.fullName,
