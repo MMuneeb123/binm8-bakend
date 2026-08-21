@@ -377,7 +377,8 @@ export const councilSchemas = {
         search: Joi.string().min(1).max(100).messages({
             "string.min": "Search term must be at least 1 character",
             "string.max": "Search term cannot exceed 100 characters"
-        })
+        }),
+        country: Joi.string().trim().max(7).uppercase()
     }),
 
     addCouncil: Joi.object({

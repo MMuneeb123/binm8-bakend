@@ -10,7 +10,7 @@ import {
 // Get all councils with optional filtering
 export async function getCouncils(req, res) {
     try {
-        const { type, search } = req.query;
+        const { type, search, country } = req.query;
         
         const whereClause = {
             isActive: true
@@ -34,6 +34,10 @@ export async function getCouncils(req, res) {
             whereClause.type = type;
         }
 
+        if (country) {
+            whereClause.country = String(country).trim().toUpperCase();
+        }
+
         // Search by name if provided
         if (search) {
             whereClause.name = {
@@ -44,7 +48,7 @@ export async function getCouncils(req, res) {
         const councils = await Council.findAll({
             where: whereClause,
             order: [['name', 'ASC']],
-            attributes: ['id', 'name', 'type']
+            attributes: ['id', 'name', 'type', 'country']
         });
 
         return successResponse(res, councils);

@@ -8,6 +8,9 @@ import holidayModel from "./holiday_model.js";
 import otpModel from "./otp_model.js";
 import councilModel from "./council_model.js";
 import userStreakModel from "./user_streak_model.js";
+import notificationLogModel from "./notification_log_model.js";
+import pushNotificationModel from "./push_notification_model.js";
+import pushNotificationDeliveryModel from "./push_notification_delivery_model.js";
 import subscriptionModel from "./subscription_model.js"; // 👈 Added Subscription Model
 
 const sequelize = new Sequelize(
@@ -43,11 +46,24 @@ db.Holiday = holidayModel(sequelize, Sequelize);
 db.OTP = otpModel(sequelize, Sequelize);
 db.Council = councilModel(sequelize, Sequelize);
 db.UserStreak = userStreakModel(sequelize, Sequelize);
+db.NotificationLog = notificationLogModel(sequelize, Sequelize);
+db.PushNotification = pushNotificationModel(sequelize, Sequelize);
+db.PushNotificationDelivery = pushNotificationDeliveryModel(sequelize, Sequelize);
 db.Subscription = subscriptionModel(sequelize, Sequelize); // 👈 Initialized Subscription Model
 
 // Define associations
 db.User.hasMany(db.UserBin, { foreignKey: "userId", onDelete: "CASCADE" });
 db.UserBin.belongsTo(db.User, { foreignKey: "userId", onDelete: "CASCADE" });
+db.User.hasMany(db.NotificationLog, { foreignKey: "userId", onDelete: "CASCADE" });
+db.NotificationLog.belongsTo(db.User, { foreignKey: "userId", onDelete: "CASCADE" });
+db.UserBin.hasMany(db.NotificationLog, { foreignKey: "userBinId", onDelete: "SET NULL" });
+db.NotificationLog.belongsTo(db.UserBin, { foreignKey: "userBinId", onDelete: "SET NULL" });
+db.PushNotification.belongsTo(db.Country, { foreignKey: "countryCode", targetKey: "code" });
+db.PushNotification.belongsTo(db.Council, { foreignKey: "councilId" });
+db.PushNotification.hasMany(db.PushNotificationDelivery, { foreignKey: "pushNotificationId", onDelete: "CASCADE" });
+db.PushNotificationDelivery.belongsTo(db.PushNotification, { foreignKey: "pushNotificationId", onDelete: "CASCADE" });
+db.User.hasMany(db.PushNotificationDelivery, { foreignKey: "userId", onDelete: "CASCADE" });
+db.PushNotificationDelivery.belongsTo(db.User, { foreignKey: "userId", onDelete: "CASCADE" });
 
 // db.Country.hasMany(db.Holiday, { foreignKey: "countryCode" });
 // db.Holiday.belongsTo(db.Country, { foreignKey: "countryCode" });
@@ -90,4 +106,4 @@ sequelize
   });
 
 export default db;
-export const { User, BinType, UserBin, Country, Holiday, OTP, Council, UserStreak, Subscription } = db;
+export const { User, BinType, UserBin, Country, Holiday, OTP, Council, UserStreak, Subscription, NotificationLog, PushNotification, PushNotificationDelivery } = db;

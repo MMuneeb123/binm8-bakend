@@ -60,6 +60,32 @@ function reminderBody(bin, collectionYmd, offsetDays) {
   return `Reminder: Your ${type} bin will be collected in ${daysUntil} days (${collectionYmd}).`;
 }
 
+async function recordSentNotification(bin, details) {
+  // Unit tests provide plain objects; only persisted Sequelize models are logged.
+  if (typeof bin?.get !== "function") return;
+
+  try {
+    const { NotificationLog } = await import("../models/index.js");
+    await NotificationLog.create({
+      userId: bin.User.id,
+      userBinId: bin.id,
+      title: "Bin Collection Reminder",
+      message: details.body,
+      notificationType: "collection_reminder",
+      status: "SENT",
+      fcmMessageId: details.fcmMessageId || null,
+      collectionDate: details.collectionYmd,
+      scheduledFor: details.scheduledFor || null,
+      sentAt: new Date(),
+      offsetDays: details.offsetDays,
+      isCatchUp: details.isCatchUp,
+    });
+  } catch (error) {
+    // A failed history write must not turn a successful push into a retry.
+    console.error("Unable to save notification history:", error);
+  }
+}
+
 /**
  * @returns {Promise<{ ok: true } | { ok: false, code?: string, invalidToken?: boolean, retryable?: boolean }>}
  */
@@ -105,7 +131,15 @@ export async function sendPushNotification(bin, meta = {}) {
   };
 
   try {
-    await reminderTransport.send(message);
+    const fcmMessageId = await reminderTransport.send(message);
+    await recordSentNotification(bin, {
+      body,
+      collectionYmd: collectionDateStr,
+      offsetDays,
+      scheduledFor: meta.scheduledFor,
+      isCatchUp: meta.isCatchUp === true,
+      fcmMessageId,
+    });
     console.log("Successfully sent notification");
     return { ok: true };
   } catch (error) {
@@ -124,6 +158,36 @@ export async function sendPushNotification(bin, meta = {}) {
       code: error.code || "unknown",
       retryable: true,
     };
+  }
+}
+
+/** Send an admin-created notification to one user. */
+export async function sendAdminPushNotification(user, { title, message, notificationId }) {
+  const payload = {
+    token: user.deviceToken,
+    notification: { title, body: message },
+    data: {
+      type: "admin_broadcast",
+      notificationId: String(notificationId),
+    },
+    android: {
+      priority: "high",
+      notification: { channelId: "bin_collections", sound: "default", priority: "high" },
+    },
+    apns: { payload: { aps: { sound: "default" } } },
+  };
+
+  try {
+    const fcmMessageId = await reminderTransport.send(payload);
+    return { ok: true, fcmMessageId };
+  } catch (error) {
+    const invalid =
+      error.code === "messaging/invalid-registration-token" ||
+      error.code === "messaging/registration-token-not-registered";
+    if (invalid) {
+      await user.update({ deviceToken: null });
+    }
+    return { ok: false, errorCode: error.code || "unknown", invalidToken: invalid };
   }
 }
 
@@ -223,7 +287,12 @@ async function deliverRemindersForBinInternal(
       }reminder ${key} for bin ${bin.id} (${bin.binType}) → ${user.email}`
     );
 
-    const result = await sendPushNotification(bin, { offsetDays, collectionYmd });
+    const result = await sendPushNotification(bin, {
+      offsetDays,
+      collectionYmd,
+      scheduledFor: instant,
+      isCatchUp: catchUpWindowMs !== null,
+    });
     if (result.ok) {
       sentKeys = { ...sentKeys, [key]: new Date().toISOString() };
       sentCount++;

@@ -1,8 +1,251 @@
 import { Sequelize, Op } from 'sequelize';
 import db from '../models/index.js';
 import { successResponse, errorResponse } from '../utils/responseHandler.js';
+import { sendAdminPushNotification } from '../services/notification_delivery.js';
 
-const { User, Council, Subscription, UserBin } = db;
+const { User, Council, Subscription, UserBin, NotificationLog, Country, PushNotification, PushNotificationDelivery } = db;
+
+/** GET /api/v1/admin/dashboard/notifications?page=1&limit=20&search=email-or-name */
+export const getPushNotifications = async (req, res) => {
+    try {
+        const requestedPage = Number.parseInt(req.query.page, 10);
+        const requestedLimit = Number.parseInt(req.query.limit, 10);
+        const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+        const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+            ? Math.min(requestedLimit, 100)
+            : 20;
+        const search = String(req.query.search || '').trim();
+        const offset = (page - 1) * limit;
+        const userWhere = search ? {
+            [Op.or]: [
+                { fullName: { [Op.iLike]: `%${search}%` } },
+                { email: { [Op.iLike]: `%${search}%` } },
+            ],
+        } : undefined;
+
+        const { count, rows } = await NotificationLog.findAndCountAll({
+            include: [
+                { model: User, attributes: ['id', 'fullName', 'email'], required: Boolean(search), where: userWhere },
+                { model: UserBin, attributes: ['id', 'binType'], required: false },
+            ],
+            order: [['sentAt', 'DESC']],
+            limit,
+            offset,
+            distinct: true,
+        });
+
+        return successResponse(res, {
+            notifications: rows.map((notification) => ({
+                id: notification.id,
+                title: notification.title,
+                message: notification.message,
+                status: notification.status,
+                sentAt: notification.sentAt,
+                scheduledFor: notification.scheduledFor,
+                collectionDate: notification.collectionDate,
+                notificationType: notification.notificationType,
+                isCatchUp: notification.isCatchUp,
+                recipient: notification.User ? {
+                    id: notification.User.id,
+                    name: notification.User.fullName,
+                    email: notification.User.email,
+                } : null,
+                bin: notification.UserBin ? {
+                    id: notification.UserBin.id,
+                    type: notification.UserBin.binType,
+                } : null,
+            })),
+            pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+        }, 'Push notification history fetched successfully');
+    } catch (error) {
+        console.error('Error fetching push notification history:', error);
+        return errorResponse(res, 'Failed to fetch push notification history', 500);
+    }
+};
+
+/** Send an admin push notification to all users, one country, or one council. */
+export const sendAdminPushNotificationToAudience = async (req, res) => {
+    try {
+        const { title, message, targetType, countryCode, councilId } = req.body;
+        const normalizedTarget = String(targetType || '').trim().toUpperCase();
+
+        if (!['GLOBAL', 'COUNTRY', 'COUNCIL'].includes(normalizedTarget)) {
+            return errorResponse(res, 'targetType must be GLOBAL, COUNTRY, or COUNCIL', 400);
+        }
+        if ((normalizedTarget === 'COUNTRY' || normalizedTarget === 'COUNCIL') && !countryCode) {
+            return errorResponse(res, 'countryCode is required when targetType is COUNTRY or COUNCIL', 400);
+        }
+        if (normalizedTarget === 'COUNCIL' && !councilId) {
+            return errorResponse(res, 'councilId is required when targetType is COUNCIL', 400);
+        }
+
+        const normalizedCountryCode = countryCode ? String(countryCode).trim().toUpperCase() : null;
+        const normalizedCouncilId = councilId ? Number.parseInt(councilId, 10) : null;
+
+        if (normalizedTarget === 'COUNTRY' || normalizedTarget === 'COUNCIL') {
+            const country = await Country.findByPk(normalizedCountryCode);
+            if (!country) return errorResponse(res, 'Country not found', 404);
+        }
+        if (normalizedTarget === 'COUNCIL') {
+            const council = await Council.findOne({
+                where: { id: normalizedCouncilId, country: normalizedCountryCode },
+            });
+            if (!council) return errorResponse(res, 'Council not found', 404);
+        }
+
+        const notification = await PushNotification.create({
+            title,
+            message,
+            targetType: normalizedTarget,
+            countryCode: normalizedTarget === 'GLOBAL' ? null : normalizedCountryCode,
+            councilId: normalizedTarget === 'COUNCIL' ? normalizedCouncilId : null,
+            createdByAdminId: req.user?.id || null,
+            status: 'PROCESSING',
+        });
+
+        const userWhere = {
+            isActive: true,
+            deviceToken: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] },
+        };
+        if (normalizedTarget === 'COUNTRY') userWhere.country = normalizedCountryCode;
+        if (normalizedTarget === 'COUNCIL') userWhere.councilId = normalizedCouncilId;
+
+        const recipients = await User.findAll({
+            where: userWhere,
+            attributes: ['id', 'deviceToken'],
+        });
+        let sentCount = 0;
+        let failedCount = 0;
+
+        // FCM sends in small parallel batches, avoiding an unbounded request burst.
+        for (let index = 0; index < recipients.length; index += 20) {
+            const batch = recipients.slice(index, index + 20);
+            const results = await Promise.all(batch.map(async (user) => {
+                const result = await sendAdminPushNotification(user, {
+                    title,
+                    message,
+                    notificationId: notification.id,
+                });
+                await PushNotificationDelivery.create({
+                    pushNotificationId: notification.id,
+                    userId: user.id,
+                    status: result.ok ? 'SENT' : 'FAILED',
+                    fcmMessageId: result.fcmMessageId || null,
+                    errorCode: result.errorCode || null,
+                    sentAt: result.ok ? new Date() : null,
+                });
+                return result.ok;
+            }));
+            sentCount += results.filter(Boolean).length;
+            failedCount += results.filter((result) => !result).length;
+        }
+
+        await notification.update({
+            recipientCount: recipients.length,
+            sentCount,
+            failedCount,
+            status: sentCount > 0 ? 'SENT' : 'FAILED',
+            completedAt: new Date(),
+        });
+
+        return successResponse(res, {
+            id: notification.id,
+            status: notification.status,
+            targetType: notification.targetType,
+            recipientCount: recipients.length,
+            sentCount,
+            failedCount,
+        }, 'Push notification processed successfully', 201);
+    } catch (error) {
+        console.error('Error sending admin push notification:', error);
+        return errorResponse(res, 'Failed to send push notification', 500);
+    }
+};
+
+/** List manually created broadcasts for the admin notifications screen. */
+export const getAdminPushBroadcasts = async (req, res) => {
+    try {
+        const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 100);
+        const { count, rows } = await PushNotification.findAndCountAll({
+            include: [
+                { model: Country, attributes: ['code', 'name'], required: false },
+                { model: Council, attributes: ['id', 'name'], required: false },
+            ],
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset: (page - 1) * limit,
+        });
+        return successResponse(res, {
+            notifications: rows.map((item) => ({
+                id: item.id,
+                title: item.title,
+                message: item.message,
+                status: item.status,
+                targetType: item.targetType,
+                country: item.Country ? { code: item.Country.code, name: item.Country.name } : null,
+                council: item.Council ? { id: item.Council.id, name: item.Council.name } : null,
+                recipientCount: item.recipientCount,
+                sentCount: item.sentCount,
+                failedCount: item.failedCount,
+                sentAt: item.completedAt,
+                createdAt: item.createdAt,
+            })),
+            pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+        }, 'Admin push notifications fetched successfully');
+    } catch (error) {
+        console.error('Error fetching admin push notifications:', error);
+        return errorResponse(res, 'Failed to fetch admin push notifications', 500);
+    }
+};
+
+/** View recipient-level delivery results for one manually created broadcast. */
+export const getAdminPushBroadcastDeliveries = async (req, res) => {
+    try {
+        const notificationId = Number.parseInt(req.params.id, 10);
+        if (!Number.isInteger(notificationId) || notificationId <= 0) {
+            return errorResponse(res, 'Invalid notification ID', 400);
+        }
+        const page = Math.max(Number.parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 20, 1), 100);
+        const status = String(req.query.status || '').trim().toUpperCase();
+        if (status && !['SENT', 'FAILED'].includes(status)) {
+            return errorResponse(res, 'status must be SENT or FAILED', 400);
+        }
+
+        const notification = await PushNotification.findByPk(notificationId, {
+            attributes: ['id', 'title', 'status', 'recipientCount', 'sentCount', 'failedCount'],
+        });
+        if (!notification) return errorResponse(res, 'Push notification not found', 404);
+
+        const { count, rows } = await PushNotificationDelivery.findAndCountAll({
+            where: { pushNotificationId: notificationId, ...(status ? { status } : {}) },
+            include: [{ model: User, attributes: ['id', 'fullName', 'email'], required: false }],
+            order: [['createdAt', 'DESC']],
+            limit,
+            offset: (page - 1) * limit,
+        });
+
+        return successResponse(res, {
+            notification,
+            deliveries: rows.map((item) => ({
+                id: item.id,
+                status: item.status,
+                sentAt: item.sentAt,
+                errorCode: item.errorCode,
+                user: item.User ? {
+                    id: item.User.id,
+                    name: item.User.fullName,
+                    email: item.User.email,
+                } : null,
+            })),
+            pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) },
+        }, 'Push notification delivery results fetched successfully');
+    } catch (error) {
+        console.error('Error fetching push notification delivery results:', error);
+        return errorResponse(res, 'Failed to fetch push notification delivery results', 500);
+    }
+};
 
 /**
  * 1. Get Summary Cards & KPIs Stats

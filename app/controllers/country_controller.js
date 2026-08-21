@@ -86,7 +86,7 @@ export const countryController = {
                 }]
             });
 
-            return successResponse(res, 'Countries retrieved successfully', countries);
+            return successResponse(res, countries, 'Countries retrieved successfully');
         } catch (error) {
             return errorResponse(res, 'Error retrieving countries', error);
         }
