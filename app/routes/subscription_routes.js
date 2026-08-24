@@ -1,11 +1,12 @@
-import { Router } from 'express';
-import { authenticateToken } from '../middleware/auth.js';
-import { getSubscriptionStatus, updateSubscription } from '../controllers/subscription_controller.js';
+import express from 'express';
+import { handleRevenueCatWebhook, syncUserSubscription } from '../controllers/subscription_controller.js';
 
-const router = Router();
-router.use(authenticateToken);
+const router = express.Router();
 
-router.get('/status', getSubscriptionStatus);
-router.post('/upgrade', updateSubscription);
+// RevenueCat Webhook Public Route
+router.post('/webhook', handleRevenueCatWebhook);
+
+// User Subscription Sync Route
+router.post('/sync', syncUserSubscription);
 
 export default router;

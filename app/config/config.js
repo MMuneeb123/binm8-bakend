@@ -105,6 +105,12 @@ const config = {
     logging: {
         level: process.env.LOG_LEVEL || 'info',
         filePath: process.env.LOG_FILE_PATH || 'logs/app.log'
+    },
+
+    // RevenueCat configuration
+    revenuecat: {
+        secretApiKey: process.env.REVENUECAT_SECRET_API_KEY,
+        webhookSecret: process.env.REVENUECAT_WEBHOOK_SECRET
     }
 };
 

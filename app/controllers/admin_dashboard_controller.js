@@ -417,7 +417,7 @@ export const getDashboardAnalytics = async (req, res) => {
         const currentYear = new Date().getFullYear();
         const startOfYear = new Date(`${currentYear}-01-01T00:00:00.000Z`);
 
-        // Get array of months from January to Current Month (e.g., Jan to Aug)
+        // Get array of months from January to Current Month (Jan to Aug)
         const allMonths = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const currentMonthIndex = new Date().getMonth();
         const monthsToInclude = allMonths.slice(0, currentMonthIndex + 1);
@@ -427,32 +427,33 @@ export const getDashboardAnalytics = async (req, res) => {
             return monthsToInclude.map(monthName => {
                 const existing = rawDbData.find(item => (item.month ? item.month.trim() : '') === monthName);
                 let value = 0;
-                if (existing && existing[keyName]) {
+                if (existing && existing[keyName] !== undefined && existing[keyName] !== null) {
                     value = isInteger ? parseInt(existing[keyName], 10) : parseFloat(existing[keyName]);
                 }
                 return {
                     month: monthName,
-                    [keyName]: value
+                    [keyName]: Number(value.toFixed(2))
                 };
             });
         };
 
-        // --- 1. DYNAMIC REVENUE CHART ---
+        // --- 1. FIXED REVENUE CHART ---
+        // Historical dynamic revenue by month (regardless of status changes)
         const monthlyRevenueRaw = await Subscription.findAll({
             attributes: [
                 [Sequelize.fn('TO_CHAR', Sequelize.col('createdAt'), 'Mon'), 'month'],
-                [Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "createdAt"')), 'month_num'],
-                [Sequelize.fn('SUM', Sequelize.col('amount')), 'revenue']
+                [Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "Subscription"."createdAt"')), 'month_num'],
+                [Sequelize.fn('COALESCE', Sequelize.fn('SUM', Sequelize.col('amount')), 0), 'revenue']
             ],
             where: {
-                status: 'ACTIVE',
-                createdAt: { [Op.gte]: startOfYear }
+                createdAt: { [Op.gte]: startOfYear },
+                amount: { [Op.gt]: 0 } // Sirf actual paid entries sum honge
             },
             group: [
                 Sequelize.fn('TO_CHAR', Sequelize.col('createdAt'), 'Mon'),
-                Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "createdAt"'))
+                Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "Subscription"."createdAt"'))
             ],
-            order: [[Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "createdAt"')), 'ASC']],
+            order: [[Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "Subscription"."createdAt"')), 'ASC']],
             raw: true
         });
 
@@ -463,7 +464,7 @@ export const getDashboardAnalytics = async (req, res) => {
         const monthlyLeadsRaw = await User.findAll({
             attributes: [
                 [Sequelize.fn('TO_CHAR', Sequelize.col('createdAt'), 'Mon'), 'month'],
-                [Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "createdAt"')), 'month_num'],
+                [Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "User"."createdAt"')), 'month_num'],
                 [Sequelize.fn('COUNT', Sequelize.col('id')), 'leads']
             ],
             where: {
@@ -471,16 +472,16 @@ export const getDashboardAnalytics = async (req, res) => {
             },
             group: [
                 Sequelize.fn('TO_CHAR', Sequelize.col('createdAt'), 'Mon'),
-                Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "createdAt"'))
+                Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "User"."createdAt"'))
             ],
-            order: [[Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "createdAt"')), 'ASC']],
+            order: [[Sequelize.fn('EXTRACT', Sequelize.literal('MONTH FROM "User"."createdAt"')), 'ASC']],
             raw: true
         });
 
         // Apply 0 fill formatting
         const userLeadsGrowthChart = formatChartData(monthlyLeadsRaw, 'leads', true);
         
-        // --- 3. DYNAMIC MEMBERSHIP BREAKDOWN ---
+        // --- 3. DYNAMIC MEMBERSHIP BREAKDOWN (YEARLY, MONTHLY, TRIAL) ---
         const [yearlyCount, monthlyCount, trialCount] = await Promise.all([
             Subscription.count({ where: { planType: 'YEARLY', status: 'ACTIVE' } }),
             Subscription.count({ where: { planType: 'MONTHLY', status: 'ACTIVE' } }),
@@ -504,7 +505,7 @@ export const getDashboardAnalytics = async (req, res) => {
             }
         };
 
-        // --- 4. DYNAMIC TOP COUNCILS (FIXED ASSOCIATIONS) ---
+        // --- 4. DYNAMIC TOP COUNCILS ---
         const topCouncilsRaw = await Council.findAll({
             attributes: [
                 'id', 
@@ -541,7 +542,9 @@ export const getDashboardAnalytics = async (req, res) => {
             membershipBreakdown,
             topCouncils
         });
+
     } catch (err) {
+        console.error("Dashboard Analytics Error:", err);
         return errorResponse(res, err.message, 500);
     }
 };
@@ -655,5 +658,43 @@ export const getSystemUsers = async (req, res) => {
     } catch (error) {
         console.error('Error fetching system users:', error);
         return errorResponse(res, error.message || 'Failed to fetch system users', 500);
+    }
+};
+
+
+export const getAdminRevenueStats = async (req, res) => {
+    try {
+        const totalRevenue = await Subscription.sum('amount') || 0;
+
+        const activeSubscribersCount = await Subscription.count({
+            where: { isActive: true, status: 'ACTIVE' }
+        });
+
+        const cancelledSubscribersCount = await Subscription.count({
+            where: { status: 'CANCELLED' }
+        });
+
+        // Monthly revenue breakup query for updated camelCase/PostgreSQL fields
+        const monthlyBreakup = await db.sequelize.query(
+            `SELECT 
+                TO_CHAR("startsAt", 'YYYY-MM') AS month,
+                SUM("amount") AS total_amount,
+                COUNT("id") AS total_subscriptions
+             FROM "Subscriptions"
+             WHERE "status" IN ('ACTIVE', 'EXPIRED', 'CANCELLED')
+             GROUP BY TO_CHAR("startsAt", 'YYYY-MM')
+             ORDER BY month DESC;`,
+            { type: db.Sequelize.QueryTypes.SELECT }
+        );
+
+        return successResponse(res, {
+            totalRevenue: parseFloat(totalRevenue).toFixed(2),
+            activeSubscribers: activeSubscribersCount,
+            cancelledSubscribers: cancelledSubscribersCount,
+            monthlyBreakup
+        }, "Revenue analytics fetched successfully");
+    } catch (error) {
+        console.error("Admin Revenue Stats Error:", error);
+        return errorResponse(res, error.message, 500);
     }
 };

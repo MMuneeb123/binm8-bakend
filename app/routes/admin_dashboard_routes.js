@@ -8,6 +8,7 @@ import { adminSchemas } from '../validations/admin_schemas.js';
 import {
     getDashboardOverview,
     getRecentActivity,
+    getAdminRevenueStats,
     getDashboardAnalytics, getSystemUsers, getPushNotifications,
     sendAdminPushNotificationToAudience, getAdminPushBroadcasts, getAdminPushBroadcastDeliveries
 } from '../controllers/admin_dashboard_controller.js';
@@ -20,6 +21,7 @@ const router = Router();
 router.get('/overview', getDashboardOverview);
 router.get('/activity', getRecentActivity);
 router.get('/analytics', getDashboardAnalytics);
+router.get('/revenue', getAdminRevenueStats);
 
 
 // 

@@ -173,21 +173,21 @@ export async function register(req, res) {
     });
     // add Subscription for new user
     // Registration function ke andar User creation ke turant baad:
-    const trialDays = 7; // 7 din ka trial
+    const trialDays = 15; // 15 din ka trial
     const endsAt = new Date();
     endsAt.setDate(endsAt.getDate() + trialDays);
 
     await Subscription.create({
         userId: newUser.id,
-        planType: 'MONTHLY',
-        status: 'ACTIVE',
+        planType: 'FREE_TRIAL',
+        status: 'TRIAL',
         startsAt: new Date(),
         endsAt: endsAt,
-        amount: 190.00 // Free trial ke liye amount 0.00
+        amount: 0.00 // Free trial ke liye amount 0.00
     });
 
     // Send verification email using new email service
-    await sendEmail(email, "verification", otpCode);
+     await sendEmail(email, "verification", otpCode);
 
     return createdResponse(
       res,
