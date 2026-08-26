@@ -27,9 +27,9 @@ router.get('/revenue', getAdminRevenueStats);
 // 
 
 router.get('/system-users', getSystemUsers);
-router.get('/notifications', authenticateToken, requireAdmin, getPushNotifications);
-router.get('/notifications/broadcasts', authenticateToken, requireAdmin, getAdminPushBroadcasts);
-router.get('/notifications/broadcasts/:id/deliveries', authenticateToken, requireAdmin, getAdminPushBroadcastDeliveries);
+router.get('/notifications', getPushNotifications);
+router.get('/notifications/broadcasts', getAdminPushBroadcasts);
+router.get('/notifications/broadcasts/:id/deliveries', getAdminPushBroadcastDeliveries);
 router.post('/notifications/send', validateBody(adminSchemas.sendPushNotification), sendAdminPushNotificationToAudience);
 
 export default router;
