@@ -15,6 +15,45 @@ import {
 import { UK_COUNTRIES } from "../validations/country_schemas.js";
 import { triggerCatchUpForUser } from "../services/notification_service.js";
 
+// Helper function to calculate subscription details
+async function getSubscriptionDetails(userId) {
+  try {
+    const subscription = await Subscription.findOne({
+      where: { userId },
+      order: [["endsAt", "DESC"]], // Get most recent
+    });
+
+    if (!subscription) {
+      return {
+        subscriptionType: null,
+        remainingSubscriptionDays: null,
+        remainingTrialDays: null,
+      };
+    }
+
+    const now = new Date();
+    const endsAt = new Date(subscription.endsAt);
+    const daysRemaining = Math.ceil((endsAt - now) / (1000 * 60 * 60 * 24)); // Calculate days
+
+    // If already expired, set to 0
+    const remainingDays = daysRemaining > 0 ? daysRemaining : 0;
+
+    return {
+      subscriptionType: subscription.planType, // FREE_TRIAL, MONTHLY, YEARLY
+      remainingSubscriptionDays:
+        subscription.status === "TRIAL" ? null : remainingDays,
+      remainingTrialDays: subscription.status === "TRIAL" ? remainingDays : null,
+    };
+  } catch (error) {
+    console.error(`Error fetching subscription details for user ${userId}:`, error);
+    return {
+      subscriptionType: null,
+      remainingSubscriptionDays: null,
+      remainingTrialDays: null,
+    };
+  }
+}
+
 // Helper function to generate OTP
 const generateOTP = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -86,6 +125,9 @@ export async function login(req, res) {
       });
     }
 
+    // Fetch subscription details
+    const subscriptionDetails = await getSubscriptionDetails(user.id);
+
     // Return both tokens and user data
     const {
       password: _,
@@ -98,6 +140,7 @@ export async function login(req, res) {
       user: userData,
       accessToken,
       refreshToken,
+      subscription: subscriptionDetails,
     });
   } catch (error) {
     return errorResponse(res, error.message);
