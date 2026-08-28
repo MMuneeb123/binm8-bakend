@@ -22,6 +22,7 @@ router.use(requireAdmin);
 // Admin user management routes
 router.post('/', validateBody(userSchemas.createUser), userController.createUser);
 router.get('/', userController.getUsers);
+router.get('/:userId', userController.getUserById);
 router.put('/:userId', validateBody(userSchemas.updateUser), userController.updateUser);
 router.delete('/:userId', userController.deleteUser);
 

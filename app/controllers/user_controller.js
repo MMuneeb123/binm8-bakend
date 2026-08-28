@@ -1,4 +1,4 @@
-import { User, UserBin, OTP } from '../models/index.js';
+import { User, UserBin, OTP, Subscription } from '../models/index.js';
 import {
     validateCollectionReminders,
     isValidIanaTimezone,
@@ -20,6 +20,44 @@ import {
 } from '../utils/responseHandler.js';
 import { UK_COUNTRIES } from '../validations/country_schemas.js';
 import { triggerCatchUpForUser } from '../services/notification_service.js';
+
+// Helper function to get subscription details (outside of controller object)
+async function getSubscriptionDetails(userId) {
+    try {
+        const subscription = await Subscription.findOne({
+            where: { userId },
+            order: [["endsAt", "DESC"]], // Get most recent
+        });
+
+        if (!subscription) {
+            return {
+                subscriptionType: null,
+                remainingSubscriptionDays: null,
+                remainingTrialDays: null,
+            };
+        }
+
+        const now = new Date();
+        const endsAt = new Date(subscription.endsAt);
+        const daysRemaining = Math.ceil((endsAt - now) / (1000 * 60 * 60 * 24));
+
+        const remainingDays = daysRemaining > 0 ? daysRemaining : 0;
+
+        return {
+            subscriptionType: subscription.planType,
+            remainingSubscriptionDays:
+                subscription.status === "TRIAL" ? null : remainingDays,
+            remainingTrialDays: subscription.status === "TRIAL" ? remainingDays : null,
+        };
+    } catch (error) {
+        console.error(`Error fetching subscription details for user ${userId}:`, error);
+        return {
+            subscriptionType: null,
+            remainingSubscriptionDays: null,
+            remainingTrialDays: null,
+        };
+    }
+}
 
 export const userController = {
 
@@ -72,14 +110,64 @@ export const userController = {
         }
     },
 
-    // Get all users (admin only)
+    // Get all users (admin only) with pagination
     async getUsers(req, res) {
         try {
-            const users = await User.findAll({
+            const requestedPage = Number.parseInt(req.query.page, 10);
+            const requestedLimit = Number.parseInt(req.query.limit, 10);
+            const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+            const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+                ? Math.min(requestedLimit, 100) // Max 100 per page
+                : 20; // Default 20 per page
+            const offset = (page - 1) * limit;
+
+            const { count, rows } = await User.findAndCountAll({
                 attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] },
-                order: [['createdAt', 'DESC']]
+                order: [['createdAt', 'DESC']],
+                limit,
+                offset,
+                distinct: true
             });
-            return successResponse(res, users);
+            
+            // Add subscription details for each user
+            const usersWithSubscription = await Promise.all(
+                rows.map(async (user) => {
+                    const userData = user.toJSON();
+                    userData.subscription = await getSubscriptionDetails(user.id);
+                    return userData;
+                })
+            );
+            
+            return successResponse(res, {
+                users: usersWithSubscription,
+                pagination: {
+                    total: count,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(count / limit)
+                }
+            });
+        } catch (error) {
+            return errorResponse(res, error.message);
+        }
+    },
+
+    // Get specific user by ID with subscription details (admin only)
+    async getUserById(req, res) {
+        try {
+            const { userId } = req.params;
+            const user = await User.findByPk(userId, {
+                attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] }
+            });
+            
+            if (!user) {
+                return notFoundResponse(res, 'User not found');
+            }
+            
+            const userData = user.toJSON();
+            userData.subscription = await getSubscriptionDetails(user.id);
+            
+            return successResponse(res, userData, 'User details fetched successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
@@ -170,6 +258,10 @@ export const userController = {
             const payload = user.toJSON();
             payload.timezone = payload.timezone || 'Europe/London';
             payload.collectionReminders = getRemindersForApiResponse(user);
+            
+            // Add subscription details
+            payload.subscription = await getSubscriptionDetails(userId);
+            
             return successResponse(res, attachTimezoneAliases(payload), null);
         } catch (error) {
             return errorResponse(res, error.message);
