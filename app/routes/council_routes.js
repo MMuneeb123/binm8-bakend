@@ -5,6 +5,7 @@ import {
     getCouncilTypes,
     addCouncil,
     updateCouncil,
+    deleteCouncil,
     bulkAddCouncils
 } from '../controllers/council_controller.js';
 import { authenticateToken } from '../middleware/auth.js';
@@ -23,6 +24,7 @@ router.get('/:id', getCouncilById);
 router.post('/', authenticateToken, requireAdmin, validateBody(councilSchemas.addCouncil), addCouncil);
 router.post('/bulk', authenticateToken, requireAdmin, validateBody(councilSchemas.bulkAddCouncils), bulkAddCouncils);
 router.put('/:id', authenticateToken, requireAdmin, validateBody(councilSchemas.updateCouncil), updateCouncil);
+router.delete('/:id', authenticateToken, requireAdmin, deleteCouncil);
 
 export default router;
 

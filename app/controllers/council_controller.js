@@ -148,6 +148,27 @@ export async function updateCouncil(req, res) {
     }
 }
 
+// Admin: Delete council (soft delete)
+export async function deleteCouncil(req, res) {
+    try {
+        const { id } = req.params;
+
+        const council = await Council.findByPk(id);
+
+        if (!council) {
+            return notFoundResponse(res, 'Council not found');
+        }
+
+        await council.update({
+            isActive: false
+        });
+
+        return successResponse(res, { id: council.id, isActive: false }, 'Council deleted successfully');
+    } catch (error) {
+        return errorResponse(res, error.message);
+    }
+}
+
 // Admin: Bulk add councils
 export async function bulkAddCouncils(req, res) {
     try {

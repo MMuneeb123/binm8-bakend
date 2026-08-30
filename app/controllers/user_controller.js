@@ -1,4 +1,4 @@
-import { User, UserBin, OTP, Subscription } from '../models/index.js';
+import { User, UserBin, OTP, Subscription, Council } from '../models/index.js';
 import {
     validateCollectionReminders,
     isValidIanaTimezone,
@@ -123,17 +123,29 @@ export const userController = {
 
             const { count, rows } = await User.findAndCountAll({
                 attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] },
+                include: [{
+                    model: Council,
+                    attributes: ['id', 'name', 'type', 'country', 'isActive']
+                }],
                 order: [['createdAt', 'DESC']],
                 limit,
                 offset,
                 distinct: true
             });
             
-            // Add subscription details for each user
+            // Add subscription and bins details for each user
             const usersWithSubscription = await Promise.all(
                 rows.map(async (user) => {
                     const userData = user.toJSON();
                     userData.subscription = await getSubscriptionDetails(user.id);
+                    userData.council = userData.Council || null;
+                    delete userData.Council;
+
+                    userData.bins = await UserBin.findAll({
+                        where: { userId: user.id },
+                        order: [['createdAt', 'ASC']]
+                    });
+
                     return userData;
                 })
             );
@@ -152,12 +164,16 @@ export const userController = {
         }
     },
 
-    // Get specific user by ID with subscription details (admin only)
+    // Get specific user by ID with subscription details and bins (admin only)
     async getUserById(req, res) {
         try {
             const { userId } = req.params;
             const user = await User.findByPk(userId, {
-                attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] }
+                attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] },
+                include: [{
+                    model: Council,
+                    attributes: ['id', 'name', 'type', 'country', 'isActive']
+                }]
             });
             
             if (!user) {
@@ -166,6 +182,12 @@ export const userController = {
             
             const userData = user.toJSON();
             userData.subscription = await getSubscriptionDetails(user.id);
+            userData.council = userData.Council || null;
+            delete userData.Council;
+            userData.bins = await UserBin.findAll({
+                where: { userId: user.id },
+                order: [['createdAt', 'ASC']]
+            });
             
             return successResponse(res, userData, 'User details fetched successfully');
         } catch (error) {
