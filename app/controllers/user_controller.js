@@ -110,30 +110,66 @@ export const userController = {
         }
     },
 
-    // Get all users (admin only) with pagination
+    // Get all users (admin only) with pagination and optional filters
     async getUsers(req, res) {
         try {
             const requestedPage = Number.parseInt(req.query.page, 10);
             const requestedLimit = Number.parseInt(req.query.limit, 10);
             const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
             const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
-                ? Math.min(requestedLimit, 100) // Max 100 per page
-                : 20; // Default 20 per page
+                ? Math.min(requestedLimit, 100)
+                : 20;
             const offset = (page - 1) * limit;
 
+            const search = String(req.query.search || '').trim();
+            const subscriptionFilter = String(req.query.subscription || '').trim().toUpperCase();
+            const isActiveParam = req.query.isActive;
+
+            const whereClause = {};
+
+            if (search) {
+                whereClause[Op.or] = [
+                    { fullName: { [Op.iLike]: `%${search}%` } },
+                    { email: { [Op.iLike]: `%${search}%` } }
+                ];
+            }
+
+            if (isActiveParam !== undefined && isActiveParam !== null && isActiveParam !== '') {
+                const raw = String(isActiveParam).trim().toLowerCase();
+                if (raw === 'true' || raw === 'false') {
+                    whereClause.isActive = raw === 'true';
+                }
+            }
+
+            const include = [{
+                model: Council,
+                attributes: ['id', 'name', 'type', 'country', 'isActive']
+            }];
+
+            if (subscriptionFilter) {
+                include.push({
+                    model: Subscription,
+                    attributes: ['id', 'planType', 'status', 'isActive'],
+                    required: false,
+                    where: {
+                        [Op.or]: [
+                            { status: subscriptionFilter },
+                            { planType: subscriptionFilter }
+                        ]
+                    }
+                });
+            }
+
             const { count, rows } = await User.findAndCountAll({
+                where: whereClause,
                 attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] },
-                include: [{
-                    model: Council,
-                    attributes: ['id', 'name', 'type', 'country', 'isActive']
-                }],
+                include,
                 order: [['createdAt', 'DESC']],
                 limit,
                 offset,
                 distinct: true
             });
             
-            // Add subscription and bins details for each user
             const usersWithSubscription = await Promise.all(
                 rows.map(async (user) => {
                     const userData = user.toJSON();
@@ -157,11 +193,21 @@ export const userController = {
                     page,
                     limit,
                     totalPages: Math.ceil(count / limit)
+                },
+                filters: {
+                    search,
+                    subscription: subscriptionFilter || null,
+                    isActive: isActiveParam !== undefined && isActiveParam !== '' ? String(isActiveParam).trim().toLowerCase() : null
                 }
             });
         } catch (error) {
             return errorResponse(res, error.message);
         }
+    },
+
+    // Dedicated search endpoint for admin user filters
+    async searchUsers(req, res) {
+        return this.getUsers(req, res);
     },
 
     // Get specific user by ID with subscription details and bins (admin only)

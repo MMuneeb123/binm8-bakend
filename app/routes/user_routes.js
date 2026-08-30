@@ -21,6 +21,7 @@ router.use(authenticateToken);
 router.use(requireAdmin);
 // Admin user management routes
 router.post('/', validateBody(userSchemas.createUser), userController.createUser);
+router.get('/search', (req, res) => userController.searchUsers(req, res));
 router.get('/', userController.getUsers);
 router.get('/:userId', userController.getUserById);
 router.put('/:userId', validateBody(userSchemas.updateUser), userController.updateUser);
