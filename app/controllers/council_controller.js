@@ -1,4 +1,5 @@
-import { Council } from '../models/index.js';
+import { Sequelize } from 'sequelize';
+import { Council, User, UserBin } from '../models/index.js';
 import { 
     successResponse, 
     errorResponse, 
@@ -48,10 +49,55 @@ export async function getCouncils(req, res) {
         const councils = await Council.findAll({
             where: whereClause,
             order: [['name', 'ASC']],
-            attributes: ['id', 'name', 'type', 'country']
+            attributes: ['id', 'name', 'type', 'country', 'isActive']
         });
 
-        return successResponse(res, councils);
+        const topCouncilsRaw = await Council.findAll({
+            where: { isActive: true },
+            attributes: [
+                'id',
+                'name',
+                [Sequelize.fn('COUNT', Sequelize.col('Users.UserBins.id')), 'membersCount']
+            ],
+            include: [{
+                model: User,
+                attributes: [],
+                include: [{
+                    model: UserBin,
+                    attributes: []
+                }]
+            }],
+            group: ['Council.id', 'Council.name'],
+            order: [[Sequelize.fn('COUNT', Sequelize.col('Users.UserBins.id')), 'DESC']],
+            limit: 10,
+            subQuery: false,
+            raw: true
+        });
+
+        const maxMembers = topCouncilsRaw[0]?.membersCount > 0 ? parseInt(topCouncilsRaw[0].membersCount, 10) : 1;
+        const topCouncilMap = new Map(
+            topCouncilsRaw.map((council, index) => {
+                const membersCount = parseInt(council.membersCount || 0, 10);
+                return [
+                    council.id,
+                    {
+                        position: `Top ${index + 1}`,
+                        membersCount,
+                        activityPercentage: `${Math.round((membersCount / maxMembers) * 100)}%`
+                    }
+                ];
+            })
+        );
+
+        const enrichedCouncils = councils.map((council) => {
+            const topInfo = topCouncilMap.get(council.id);
+            return {
+                ...council.toJSON ? council.toJSON() : council,
+                ...(topInfo ? { position: topInfo.position } : { position: null })
+            };
+        });
+
+        return successResponse(res, enrichedCouncils);
     } catch (error) {
         return errorResponse(res, error.message);
     }
