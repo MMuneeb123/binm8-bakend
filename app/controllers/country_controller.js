@@ -47,7 +47,7 @@ export const countryController = {
                 name
             });
 
-            return createdResponse(res, 'Country added successfully', country);
+            return createdResponse(res, country, 'Country added successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
@@ -88,7 +88,7 @@ export const countryController = {
 
             return successResponse(res, countries, 'Countries retrieved successfully');
         } catch (error) {
-            return errorResponse(res, 'Error retrieving countries', error);
+            return errorResponse(res, error.message || 'Error retrieving countries', 500, null);
         }
     },
 
@@ -114,7 +114,7 @@ export const countryController = {
                 isActive: isActive !== undefined ? isActive : country.isActive
             });
 
-            return successResponse(res, 'Country updated successfully', country);
+            return successResponse(res, country, 'Country updated successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
@@ -148,7 +148,7 @@ export const countryController = {
                 countryCode: country.code
             });
 
-            return createdResponse(res, 'Holiday added successfully', holiday);
+            return createdResponse(res, holiday, 'Holiday added successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
@@ -193,7 +193,7 @@ export const countryController = {
                 }))
             );
 
-            return createdResponse(res, 'Holidays added successfully', createdHolidays);
+            return createdResponse(res, createdHolidays, 'Holidays added successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
@@ -231,7 +231,7 @@ export const countryController = {
                 ]
             });
 
-            return successResponse(res, 'Holidays retrieved successfully', holidays);
+            return successResponse(res, holidays, 'Holidays retrieved successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
@@ -287,7 +287,7 @@ export const countryController = {
 
             await holiday.update(updateData);
 
-            return successResponse(res, 'Holiday updated successfully', holiday);
+            return successResponse(res, holiday, 'Holiday updated successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
@@ -321,7 +321,7 @@ export const countryController = {
 
             await holiday.destroy();
 
-            return successResponse(res, 'Holiday deleted successfully');
+            return successResponse(res, null, 'Holiday deleted successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }

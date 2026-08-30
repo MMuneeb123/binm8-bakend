@@ -65,8 +65,8 @@ db.PushNotificationDelivery.belongsTo(db.PushNotification, { foreignKey: "pushNo
 db.User.hasMany(db.PushNotificationDelivery, { foreignKey: "userId", onDelete: "CASCADE" });
 db.PushNotificationDelivery.belongsTo(db.User, { foreignKey: "userId", onDelete: "CASCADE" });
 
-// db.Country.hasMany(db.Holiday, { foreignKey: "countryCode" });
-// db.Holiday.belongsTo(db.Country, { foreignKey: "countryCode" });
+db.Country.hasMany(db.Holiday, { foreignKey: "countryCode", sourceKey: "code", onDelete: "CASCADE" });
+db.Holiday.belongsTo(db.Country, { foreignKey: "countryCode", targetKey: "code" });
 
 // db.User.belongsTo(db.Country, { foreignKey: "country", targetKey: "code" });
 // db.Country.hasMany(db.User, { foreignKey: "country", sourceKey: "code" });

@@ -2,9 +2,13 @@
  * Common response handler for all controllers
  */
 
+const getSafeStatusCode = (statusCode, fallback) => {
+    return Number.isInteger(statusCode) ? statusCode : fallback;
+};
+
 // Success response handler
 export const successResponse = (res, data = null, message = 'Success', statusCode = 200) => {
-    return res.status(statusCode).json({
+    return res.status(getSafeStatusCode(statusCode, 200)).json({
         status: 'success',
         message,
         data
@@ -13,7 +17,7 @@ export const successResponse = (res, data = null, message = 'Success', statusCod
 
 // Error response handler
 export const errorResponse = (res, message = 'Something went wrong', statusCode = 500, errors = null) => {
-    return res.status(statusCode).json({
+    return res.status(getSafeStatusCode(statusCode, 500)).json({
         status: 'error',
         message,
         errors
