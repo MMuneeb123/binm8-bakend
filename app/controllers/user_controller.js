@@ -1,4 +1,4 @@
-import { User, UserBin, OTP, Subscription, Council } from '../models/index.js';
+import { User, UserBin, OTP, Subscription, Council, NotificationLog } from '../models/index.js';
 import {
     validateCollectionReminders,
     isValidIanaTimezone,
@@ -236,6 +236,73 @@ export const userController = {
             });
             
             return successResponse(res, userData, 'User details fetched successfully');
+        } catch (error) {
+            return errorResponse(res, error.message);
+        }
+    },
+
+    // Get notifications for a specific user with pagination
+    async getUserNotifications(req, res) {
+        try {
+            const { userId } = req.params;
+            const requestedPage = Number.parseInt(req.query.page, 10);
+            const requestedLimit = Number.parseInt(req.query.limit, 10);
+            const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+            const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+                ? Math.min(requestedLimit, 100)
+                : 20;
+            const offset = (page - 1) * limit;
+
+            const user = await User.findByPk(userId, {
+                attributes: ['id', 'fullName', 'email']
+            });
+
+            if (!user) {
+                return notFoundResponse(res, 'User not found');
+            }
+
+            const { count, rows } = await NotificationLog.findAndCountAll({
+                where: { userId },
+                include: [{
+                    model: UserBin,
+                    attributes: ['id', 'binType'],
+                    required: false
+                }],
+                order: [['sentAt', 'DESC']],
+                limit,
+                offset,
+                distinct: true
+            });
+
+            return successResponse(res, {
+                user: {
+                    id: user.id,
+                    fullName: user.fullName,
+                    email: user.email
+                },
+                notifications: rows.map((notification) => ({
+                    id: notification.id,
+                    title: notification.title,
+                    message: notification.message,
+                    notificationType: notification.notificationType,
+                    status: notification.status,
+                    collectionDate: notification.collectionDate,
+                    scheduledFor: notification.scheduledFor,
+                    sentAt: notification.sentAt,
+                    isCatchUp: notification.isCatchUp,
+                    offsetDays: notification.offsetDays,
+                    bin: notification.UserBin ? {
+                        id: notification.UserBin.id,
+                        type: notification.UserBin.binType
+                    } : null
+                })),
+                pagination: {
+                    total: count,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(count / limit)
+                }
+            }, 'User notifications fetched successfully');
         } catch (error) {
             return errorResponse(res, error.message);
         }
