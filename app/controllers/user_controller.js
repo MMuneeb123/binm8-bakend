@@ -34,6 +34,8 @@ async function getSubscriptionDetails(userId) {
                 subscriptionType: null,
                 remainingSubscriptionDays: null,
                 remainingTrialDays: null,
+                status: null,
+                endsAt: null
             };
         }
 
@@ -48,6 +50,8 @@ async function getSubscriptionDetails(userId) {
             remainingSubscriptionDays:
                 subscription.status === "TRIAL" ? null : remainingDays,
             remainingTrialDays: subscription.status === "TRIAL" ? remainingDays : null,
+            status: subscription.status,
+            endsAt: subscription.endsAt || null
         };
     } catch (error) {
         console.error(`Error fetching subscription details for user ${userId}:`, error);
@@ -146,20 +150,58 @@ export const userController = {
                 attributes: ['id', 'name', 'type', 'country', 'isActive']
             }];
 
+            // If a subscription filter is provided, we'll resolve latest subscription per user
+            // and filter in JS so we honour the most-recent subscription status/plan.
             if (subscriptionFilter) {
-                include.push({
-                    model: Subscription,
-                    attributes: ['id', 'planType', 'status', 'isActive'],
-                    required: false,
-                    where: {
-                        [Op.or]: [
-                            { status: subscriptionFilter },
-                            { planType: subscriptionFilter }
-                        ]
+                // Fetch all candidate users matching the basic whereClause (no pagination yet)
+                const allCandidates = await User.findAll({
+                    where: whereClause,
+                    attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] },
+                    include,
+                    order: [['createdAt', 'DESC']],
+                    distinct: true
+                });
+
+                // Enrich with latest subscription, council and bins
+                const enriched = await Promise.all(allCandidates.map(async (user) => {
+                    const userData = user.toJSON();
+                    const latestSub = await getSubscriptionDetails(user.id);
+                    userData.subscription = latestSub;
+                    userData.council = userData.Council || null;
+                    delete userData.Council;
+                    userData.bins = await UserBin.findAll({ where: { userId: user.id }, order: [['createdAt', 'ASC']] });
+                    return userData;
+                }));
+
+                // Filter by latest subscription status or planType
+                const filtered = enriched.filter(u => {
+                    const lf = subscriptionFilter;
+                    if (!u.subscription) return false;
+                    const status = (u.subscription.status || '').toString().toUpperCase();
+                    const plan = (u.subscription.subscriptionType || '').toString().toUpperCase();
+                    return status === lf || plan === lf;
+                });
+
+                const total = filtered.length;
+                const pageSlice = filtered.slice(offset, offset + limit);
+
+                return successResponse(res, {
+                    users: pageSlice,
+                    pagination: {
+                        total,
+                        page,
+                        limit,
+                        totalPages: Math.ceil(total / limit)
+                    },
+                    filters: {
+                        search,
+                        subscription: subscriptionFilter || null,
+                        isActive: isActiveParam !== undefined && isActiveParam !== '' ? String(isActiveParam).trim().toLowerCase() : null
                     }
                 });
             }
 
+            // No subscription filter — do normal paginated query
             const { count, rows } = await User.findAndCountAll({
                 where: whereClause,
                 attributes: { exclude: ['password', 'refreshToken', 'refreshTokenExpiry'] },
@@ -169,7 +211,7 @@ export const userController = {
                 offset,
                 distinct: true
             });
-            
+
             const usersWithSubscription = await Promise.all(
                 rows.map(async (user) => {
                     const userData = user.toJSON();
@@ -185,7 +227,7 @@ export const userController = {
                     return userData;
                 })
             );
-            
+
             return successResponse(res, {
                 users: usersWithSubscription,
                 pagination: {
