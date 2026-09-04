@@ -146,7 +146,8 @@ export async function sendPushNotification(bin, meta = {}) {
     console.error("Error sending notification:", error);
     const invalid =
       error.code === "messaging/invalid-registration-token" ||
-      error.code === "messaging/registration-token-not-registered";
+      error.code === "messaging/registration-token-not-registered" ||
+      error.code === "messaging/mismatched-credential";
     if (invalid) {
       await user.update({ deviceToken: null });
       if (bin.User) bin.User.deviceToken = null;
@@ -178,14 +179,21 @@ export async function sendAdminPushNotification(user, { title, message, notifica
   };
 
   try {
+    console.log(`sendAdminPushNotification -> user ${user.id} tokenPreview=${user.deviceToken ? `${String(user.deviceToken).slice(0,12)}...` : 'NO_TOKEN'}`);
     const fcmMessageId = await reminderTransport.send(payload);
     return { ok: true, fcmMessageId };
   } catch (error) {
+    console.error('Error sending admin push notification to user', user.id, error && error.code ? error.code : error);
     const invalid =
       error.code === "messaging/invalid-registration-token" ||
-      error.code === "messaging/registration-token-not-registered";
+      error.code === "messaging/registration-token-not-registered" ||
+      error.code === "messaging/mismatched-credential";
     if (invalid) {
-      await user.update({ deviceToken: null });
+      try {
+        await user.update({ deviceToken: null });
+      } catch (e) {
+        console.error('Failed to clear invalid deviceToken for user', user.id, e);
+      }
     }
     return { ok: false, errorCode: error.code || "unknown", invalidToken: invalid };
   }

@@ -117,10 +117,17 @@ export const sendAdminPushNotificationToAudience = async (req, res) => {
         let sentCount = 0;
         let failedCount = 0;
 
+        // Log recipients (token preview) to help debug widespread failures
+        console.log(`Admin push ${notification.id} - recipients: ${recipients.length}`);
+        console.log(
+            recipients.slice(0, 20).map(u => ({ id: u.id, tokenPreview: u.deviceToken ? `${String(u.deviceToken).slice(0,8)}...` : null }))
+        );
+
         // FCM sends in small parallel batches, avoiding an unbounded request burst.
         for (let index = 0; index < recipients.length; index += 20) {
             const batch = recipients.slice(index, index + 20);
             const results = await Promise.all(batch.map(async (user) => {
+                console.log(`Sending broadcast ${notification.id} -> user ${user.id} token=${user.deviceToken ? `${String(user.deviceToken).slice(0,12)}...` : 'NO_TOKEN'}`);
                 const result = await sendAdminPushNotification(user, {
                     title,
                     message,
@@ -134,6 +141,7 @@ export const sendAdminPushNotificationToAudience = async (req, res) => {
                     errorCode: result.errorCode || null,
                     sentAt: result.ok ? new Date() : null,
                 });
+                if (!result.ok) console.warn(`Delivery failed for user ${user.id}:`, result.errorCode || 'unknown');
                 return result.ok;
             }));
             sentCount += results.filter(Boolean).length;
@@ -147,6 +155,16 @@ export const sendAdminPushNotificationToAudience = async (req, res) => {
             status: sentCount > 0 ? 'SENT' : 'FAILED',
             completedAt: new Date(),
         });
+
+        // Log failed deliveries for debugging
+        try {
+            const failedRows = await PushNotificationDelivery.findAll({ where: { pushNotificationId: notification.id, status: 'FAILED' }, limit: 50, order: [['createdAt','DESC']] });
+            if (failedRows && failedRows.length) {
+                console.warn(`Broadcast ${notification.id} failures:`, failedRows.map(r => ({ userId: r.userId, errorCode: r.errorCode })));
+            }
+        } catch (err) {
+            console.error('Error fetching delivery failures for logging:', err);
+        }
 
         return successResponse(res, {
             id: notification.id,

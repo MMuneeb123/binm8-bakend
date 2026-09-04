@@ -1,4 +1,4 @@
-import { User, UserBin, OTP, Subscription, Council, NotificationLog } from '../models/index.js';
+import { User, UserBin, OTP, Subscription, Council, NotificationLog, PushNotification, PushNotificationDelivery } from '../models/index.js';
 import {
     validateCollectionReminders,
     isValidIanaTimezone,
@@ -445,6 +445,82 @@ export const userController = {
         }
     },
 
+    // Get notifications for the authenticated user (both reminders and admin broadcasts)
+    async getMyNotifications(req, res) {
+        try {
+            const userId = req.user.id;
+            const requestedPage = Number.parseInt(req.query.page, 10);
+            const requestedLimit = Number.parseInt(req.query.limit, 10);
+            const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+            const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+                ? Math.min(requestedLimit, 100)
+                : 20;
+            const offset = (page - 1) * limit;
+
+            const user = await User.findByPk(userId, { attributes: ['id', 'fullName', 'email'] });
+            if (!user) return notFoundResponse(res, 'User not found');
+
+            const [logs, deliveries] = await Promise.all([
+                NotificationLog.findAll({
+                    where: { userId },
+                    include: [{ model: UserBin, attributes: ['id', 'binType'], required: false }],
+                    order: [['sentAt', 'DESC']],
+                }),
+                PushNotificationDelivery.findAll({
+                    where: { userId },
+                    include: [{ model: PushNotification, attributes: ['id', 'title', 'message', 'targetType'], required: false }],
+                    order: [['sentAt', 'DESC']],
+                })
+            ]);
+
+            const mappedLogs = logs.map(n => ({
+                source: 'reminder',
+                id: n.id,
+                title: n.title,
+                message: n.message,
+                type: n.notificationType,
+                status: n.status,
+                sentAt: n.sentAt,
+                scheduledFor: n.scheduledFor,
+                collectionDate: n.collectionDate,
+                isCatchUp: n.isCatchUp,
+                offsetDays: n.offsetDays,
+                bin: n.UserBin ? { id: n.UserBin.id, type: n.UserBin.binType } : null,
+            }));
+
+            const mappedDeliveries = deliveries.map(d => ({
+                source: 'broadcast',
+                id: d.id,
+                title: d.PushNotification ? d.PushNotification.title : null,
+                message: d.PushNotification ? d.PushNotification.message : null,
+                type: d.PushNotification ? `broadcast:${d.PushNotification.targetType}` : 'broadcast',
+                status: d.status,
+                sentAt: d.sentAt,
+                errorCode: d.errorCode || null,
+                pushNotificationId: d.pushNotificationId,
+            }));
+
+            const merged = [...mappedLogs, ...mappedDeliveries].sort((a, b) => {
+                const ta = a.sentAt ? new Date(a.sentAt).getTime() : 0;
+                const tb = b.sentAt ? new Date(b.sentAt).getTime() : 0;
+                return tb - ta;
+            });
+
+            const total = merged.length;
+            const pageSlice = merged.slice(offset, offset + limit);
+
+            return successResponse(res, {
+                user: { id: user.id, fullName: user.fullName, email: user.email },
+                notifications: pageSlice,
+                pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+            }, 'User notifications fetched successfully');
+        } catch (error) {
+            console.error('Error fetching my notifications:', error);
+            return errorResponse(res, error.message);
+        }
+    },
+
+    
     // Update the authenticated user's profile (name, country, council, and deviceToken)
     async editProfile(req, res) {
         try {

@@ -9,6 +9,8 @@ const router = express.Router();
 
 // Route for users to get their own profile
 router.get('/me', authenticateToken, userController.getProfile);
+// Route for users to get their own notifications (reminders + admin broadcasts)
+router.get('/me/notifications', authenticateToken, userController.getMyNotifications);
 // Route for users to edit their own profile (name and country)
 router.put('/me', authenticateToken, validateBody(userSchemas.editProfile), userController.editProfile);
 // Timezone + collection reminders (full replace for array when provided)
