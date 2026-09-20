@@ -3,6 +3,17 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { Op } from "sequelize";
 import { User, OTP, Subscription } from "../models/index.js";
+import config from "../config/config.js";
+import { sendEmail } from "../config/email.js";
+import {
+  successResponse,
+  errorResponse,
+  createdResponse,
+  unauthorizedResponse,
+  badRequestResponse,
+} from "../utils/responseHandler.js";
+import { UK_COUNTRIES } from "../validations/country_schemas.js";
+import { triggerCatchUpForUser } from "../services/notification_service.js";
 import { getSubscriptionDetails } from "../utils/subscriptionUtils.js";
 
 // Helper function to generate OTP
