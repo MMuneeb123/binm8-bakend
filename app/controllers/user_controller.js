@@ -20,48 +20,7 @@ import {
 } from '../utils/responseHandler.js';
 import { UK_COUNTRIES } from '../validations/country_schemas.js';
 import { triggerCatchUpForUser } from '../services/notification_service.js';
-
-// Helper function to get subscription details (outside of controller object)
-async function getSubscriptionDetails(userId) {
-    try {
-        const subscription = await Subscription.findOne({
-            where: { userId },
-            order: [["endsAt", "DESC"]], // Get most recent
-        });
-
-        if (!subscription) {
-            return {
-                subscriptionType: null,
-                remainingSubscriptionDays: null,
-                remainingTrialDays: null,
-                status: null,
-                endsAt: null
-            };
-        }
-
-        const now = new Date();
-        const endsAt = new Date(subscription.endsAt);
-        const daysRemaining = Math.ceil((endsAt - now) / (1000 * 60 * 60 * 24));
-
-        const remainingDays = daysRemaining > 0 ? daysRemaining : 0;
-
-        return {
-            subscriptionType: subscription.planType,
-            remainingSubscriptionDays:
-                subscription.status === "TRIAL" ? null : remainingDays,
-            remainingTrialDays: subscription.status === "TRIAL" ? remainingDays : null,
-            status: subscription.status,
-            endsAt: subscription.endsAt || null
-        };
-    } catch (error) {
-        console.error(`Error fetching subscription details for user ${userId}:`, error);
-        return {
-            subscriptionType: null,
-            remainingSubscriptionDays: null,
-            remainingTrialDays: null,
-        };
-    }
-}
+import { getSubscriptionDetails } from '../utils/subscriptionUtils.js';
 
 export const userController = {
 

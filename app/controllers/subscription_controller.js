@@ -3,11 +3,10 @@ import { successResponse, errorResponse } from '../utils/responseHandler.js';
 import config from '../config/config.js';
 
 // Helper to determine planType based on RevenueCat duration or product identifier
-const resolvePlanType = (productId) => {
-    if (!productId) return 'MONTHLY';
-    const lower = productId.toLowerCase();
-    if (lower.includes('year')) return 'YEARLY';
-    if (lower.includes('trial') || lower.includes('promo')) return 'FREE_TRIAL';
+const resolvePlanType = (productId, periodType) => {
+    const combined = `${productId || ''} ${periodType || ''}`.toLowerCase();
+    if (combined.includes('year') || combined.includes('annual')) return 'YEARLY';
+    if (combined.includes('trial') || combined.includes('promo')) return 'FREE_TRIAL';
     return 'MONTHLY';
 };
 
@@ -15,10 +14,17 @@ const resolvePlanType = (productId) => {
 export const getSubscriptionStatus = async (req, res) => {
     try {
         const userId = req.user.id;
-        const sub = await Subscription.findOne({
-            where: { userId },
+        let sub = await Subscription.findOne({
+            where: { userId, isActive: true },
             order: [['createdAt', 'DESC']],
         });
+
+        if (!sub) {
+            sub = await Subscription.findOne({
+                where: { userId },
+                order: [['createdAt', 'DESC']],
+            });
+        }
 
         if (!sub) {
             return errorResponse(res, 'No subscription record found', 404);
@@ -149,7 +155,7 @@ export const handleRevenueCatWebhook = async (req, res) => {
         const startsAt = purchased_at_ms ? new Date(purchased_at_ms) : new Date();
         const endsAt = expiration_at_ms ? new Date(expiration_at_ms) : new Date();
         const amount = price_in_purchased_currency || 0.00;
-        const planType = resolvePlanType(period_type, product_id);
+        const planType = resolvePlanType(product_id, period_type);
 
         console.log("Computed values -> startsAt:", startsAt, "endsAt:", endsAt, "amount:", amount, "planType:", planType);
 
@@ -183,17 +189,6 @@ export const handleRevenueCatWebhook = async (req, res) => {
                     currency: currency || 'USD'
                 });
                 console.log("✅ New subscription created:", newSub.id);
-
-                // User profile premium status set karo
-                const [updatedCount] = await User.update(
-                    { is_premium: true, subscription_status: 'ACTIVE' },
-                    { where: { id: userId } }
-                );
-                console.log(`✅ User.update affected ${updatedCount} row(s) for userId:`, userId);
-
-                if (updatedCount === 0) {
-                    console.error("⚠️ User.update matched 0 rows — check userId / model config / hooks");
-                }
                 break;
             }
 
@@ -219,12 +214,6 @@ export const handleRevenueCatWebhook = async (req, res) => {
                     { where: { userId, isActive: true } }
                 );
                 console.log(`Marked ${expiredCount} subscription(s) as EXPIRED for userId:`, userId);
-
-                const [userUpdatedCount] = await User.update(
-                    { is_premium: false, subscription_status: 'EXPIRED' },
-                    { where: { id: userId } }
-                );
-                console.log(`Marked user as non-premium. Rows affected: ${userUpdatedCount}`);
                 break;
             }
 
@@ -309,23 +298,12 @@ export const syncUserSubscription = async (req, res) => {
                 currency: currency
             });
 
-            // User record update karo
-            await User.update(
-                { is_premium: true, subscription_status: 'ACTIVE' },
-                { where: { id: userId } }
-            );
-
             return successResponse(res, { is_premium: true, subscription: newSub }, "Subscription synced successfully");
         } else {
             // Agar koi active subscription / entitlement na mile
             await Subscription.update(
                 { isActive: false, status: 'EXPIRED' },
                 { where: { userId, isActive: true } }
-            );
-
-            await User.update(
-                { is_premium: false, subscription_status: 'EXPIRED' },
-                { where: { id: userId } }
             );
 
             return successResponse(res, { is_premium: false }, "No active subscription found");

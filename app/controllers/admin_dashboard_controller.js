@@ -321,10 +321,10 @@ export const getDashboardOverview = async (req, res) => {
             : '0.0';
 
         const trialUsers = await Subscription.count({ 
-            where: { status: 'FREE_TRIAL' } 
+            where: { planType: 'FREE_TRIAL' } 
         });
         const trialYesterday = await Subscription.count({
-            where: { status: 'FREE_TRIAL', createdAt: { [Op.lt]: todayStart } }
+            where: { planType: 'FREE_TRIAL', createdAt: { [Op.lt]: todayStart } }
         });
         const trialPercentageChange = trialYesterday > 0 
             ? (((trialUsers - trialYesterday) / trialYesterday) * 100).toFixed(1) 

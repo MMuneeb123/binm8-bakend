@@ -2,57 +2,8 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { Op } from "sequelize";
-import { User, OTP,Subscription } from "../models/index.js";
-import config from "../config/config.js";
-import { sendEmail } from "../config/email.js";
-import {
-  successResponse,
-  errorResponse,
-  createdResponse,
-  unauthorizedResponse,
-  badRequestResponse,
-} from "../utils/responseHandler.js";
-import { UK_COUNTRIES } from "../validations/country_schemas.js";
-import { triggerCatchUpForUser } from "../services/notification_service.js";
-
-// Helper function to calculate subscription details
-async function getSubscriptionDetails(userId) {
-  try {
-    const subscription = await Subscription.findOne({
-      where: { userId },
-      order: [["endsAt", "DESC"]], // Get most recent
-    });
-
-    if (!subscription) {
-      return {
-        subscriptionType: null,
-        remainingSubscriptionDays: null,
-        remainingTrialDays: null,
-      };
-    }
-
-    const now = new Date();
-    const endsAt = new Date(subscription.endsAt);
-    const daysRemaining = Math.ceil((endsAt - now) / (1000 * 60 * 60 * 24)); // Calculate days
-
-    // If already expired, set to 0
-    const remainingDays = daysRemaining > 0 ? daysRemaining : 0;
-
-    return {
-      subscriptionType: subscription.planType, // FREE_TRIAL, MONTHLY, YEARLY
-      remainingSubscriptionDays:
-        subscription.status === "TRIAL" ? null : remainingDays,
-      remainingTrialDays: subscription.status === "TRIAL" ? remainingDays : null,
-    };
-  } catch (error) {
-    console.error(`Error fetching subscription details for user ${userId}:`, error);
-    return {
-      subscriptionType: null,
-      remainingSubscriptionDays: null,
-      remainingTrialDays: null,
-    };
-  }
-}
+import { User, OTP, Subscription } from "../models/index.js";
+import { getSubscriptionDetails } from "../utils/subscriptionUtils.js";
 
 // Helper function to generate OTP
 const generateOTP = () => {
