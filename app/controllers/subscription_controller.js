@@ -77,16 +77,25 @@ export const updateSubscription = async (req, res) => {
 
 export const handleRevenueCatWebhook = async (req, res) => {
     try {
+        console.log("========== RevenueCat Webhook Hit ==========");
+        console.log("Headers:", JSON.stringify(req.headers, null, 2));
+        console.log("Raw Body:", JSON.stringify(req.body, null, 2));
+
         const authHeader = req.headers.authorization;
         const expectedSecret = config.revenuecat.webhookSecret;
 
+        console.log("Auth Header Received:", authHeader);
+        console.log("Expected Secret Configured:", !!expectedSecret);
+
         // Webhook Secret Validation
         if (expectedSecret && authHeader !== `${expectedSecret}`) {
+            console.warn("⚠️ Webhook secret mismatch! (currently not blocking — see note below)");
             // return errorResponse(res, "Unauthorized webhook request", 401);
         }
 
         const { event } = req.body;
         if (!event) {
+            console.error("❌ No 'event' key found in req.body");
             return errorResponse(res, "No event payload provided", 400);
         }
 
@@ -104,22 +113,37 @@ export const handleRevenueCatWebhook = async (req, res) => {
             period_type
         } = event;
 
+        console.log("Event Type:", type);
+        console.log("app_user_id:", app_user_id);
+        console.log("product_id:", product_id);
+        console.log("original_transaction_id:", original_transaction_id);
+        console.log("transaction_id:", transaction_id);
+
         if (!app_user_id) {
+            console.error("❌ Missing app_user_id in event payload");
             return errorResponse(res, "Missing app_user_id in webhook", 400);
         }
 
         // Email ya Numeric ID dono handling
         let targetUser = null;
         if (app_user_id.includes('@')) {
+            console.log("app_user_id looks like an email, searching by email:", app_user_id);
             targetUser = await User.findOne({ where: { email: app_user_id } });
         } else {
-            targetUser = await User.findByPk(parseInt(app_user_id, 10));
+            const parsedId = parseInt(app_user_id, 10);
+            console.log("app_user_id treated as numeric ID. Parsed value:", parsedId);
+            if (isNaN(parsedId)) {
+                console.error("❌ app_user_id could not be parsed as a number:", app_user_id);
+            }
+            targetUser = await User.findByPk(parsedId);
         }
 
         if (!targetUser) {
-            console.error(`User not found in DB for app_user_id: ${app_user_id}`);
+            console.error(`❌ User not found in DB for app_user_id: ${app_user_id}`);
             return errorResponse(res, "User not found in database", 404);
         }
+
+        console.log("✅ User found:", targetUser.id, targetUser.email);
 
         const userId = targetUser.id;
         const startsAt = purchased_at_ms ? new Date(purchased_at_ms) : new Date();
@@ -127,18 +151,23 @@ export const handleRevenueCatWebhook = async (req, res) => {
         const amount = price_in_purchased_currency || 0.00;
         const planType = resolvePlanType(period_type, product_id);
 
+        console.log("Computed values -> startsAt:", startsAt, "endsAt:", endsAt, "amount:", amount, "planType:", planType);
+
         switch (type) {
             case 'INITIAL_PURCHASE':
             case 'RENEWAL':
             case 'PRODUCT_CHANGE': {
+                console.log(`Processing ${type} for userId:`, userId);
+
                 // Purani active subscriptions ko inactive kar do
-                await Subscription.update(
+                const [expiredCount] = await Subscription.update(
                     { isActive: false, status: 'EXPIRED' },
                     { where: { userId, isActive: true } }
                 );
+                console.log(`Marked ${expiredCount} old subscription(s) as EXPIRED for userId:`, userId);
 
                 // Nayi cycle record karo
-                await Subscription.create({
+                const newSub = await Subscription.create({
                     userId,
                     appUserId: String(app_user_id),
                     originalTransactionId: original_transaction_id || null,
@@ -153,48 +182,61 @@ export const handleRevenueCatWebhook = async (req, res) => {
                     amount,
                     currency: currency || 'USD'
                 });
+                console.log("✅ New subscription created:", newSub.id);
 
                 // User profile premium status set karo
-                await User.update(
+                const [updatedCount] = await User.update(
                     { is_premium: true, subscription_status: 'ACTIVE' },
                     { where: { id: userId } }
                 );
+                console.log(`✅ User.update affected ${updatedCount} row(s) for userId:`, userId);
+
+                if (updatedCount === 0) {
+                    console.error("⚠️ User.update matched 0 rows — check userId / model config / hooks");
+                }
                 break;
             }
 
             case 'CANCELLATION': {
+                console.log("Processing CANCELLATION for userId:", userId);
                 // Cancellation par access khatam nahi karte (expiry date tak active rehta hai)
-                await Subscription.update(
-                    { 
+                const [cancelledCount] = await Subscription.update(
+                    {
                         status: 'CANCELLED',
                         unsubscribedAt: new Date()
                     },
                     { where: { userId, isActive: true } }
                 );
+                console.log(`Marked ${cancelledCount} subscription(s) as CANCELLED for userId:`, userId);
                 break;
             }
 
             case 'EXPIRATION': {
-                // Access khatan ho chuka hai
-                await Subscription.update(
+                console.log("Processing EXPIRATION for userId:", userId);
+                // Access khatam ho chuka hai
+                const [expiredCount] = await Subscription.update(
                     { isActive: false, status: 'EXPIRED' },
                     { where: { userId, isActive: true } }
                 );
+                console.log(`Marked ${expiredCount} subscription(s) as EXPIRED for userId:`, userId);
 
-                await User.update(
+                const [userUpdatedCount] = await User.update(
                     { is_premium: false, subscription_status: 'EXPIRED' },
                     { where: { id: userId } }
                 );
+                console.log(`Marked user as non-premium. Rows affected: ${userUpdatedCount}`);
                 break;
             }
 
             default:
-                console.log(`RevenueCat Event Ignored: ${type}`);
+                console.log(`ℹ️ RevenueCat Event Ignored (no handler for this type): ${type}`);
         }
 
+        console.log("========== Webhook processed successfully ==========");
         return successResponse(res, null, "Webhook processed successfully");
     } catch (error) {
-        console.error("RevenueCat Webhook Error:", error);
+        console.error("❌ RevenueCat Webhook Error:", error);
+        console.error("Stack:", error.stack);
         return errorResponse(res, error.message || "Internal Server Error", 500);
     }
 };
