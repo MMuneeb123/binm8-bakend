@@ -1,4 +1,5 @@
 import { Subscription } from '../models/index.js';
+import { Op } from 'sequelize';
 
 /**
  * Helper function to calculate current subscription details for a user
@@ -7,16 +8,19 @@ import { Subscription } from '../models/index.js';
  */
 export async function getSubscriptionDetails(userId) {
     try {
-        // 1. First check if there is an active subscription, ordered by most recently created
+        const now = new Date();
+
+        // 1. First check if there is an unexpired active subscription, ordered by most recently created
         let subscription = await Subscription.findOne({
             where: {
                 userId,
                 isActive: true,
+                endsAt: { [Op.gt]: now },
             },
             order: [['createdAt', 'DESC']],
         });
 
-        // 2. If no active subscription, fall back to the most recent subscription record overall
+        // 2. If no active unexpired subscription, fall back to the most recent subscription record overall
         if (!subscription) {
             subscription = await Subscription.findOne({
                 where: { userId },
@@ -34,7 +38,6 @@ export async function getSubscriptionDetails(userId) {
             };
         }
 
-        const now = new Date();
         const endsAt = new Date(subscription.endsAt);
         const isExpired = endsAt < now;
         const daysRemaining = Math.ceil((endsAt - now) / (1000 * 60 * 60 * 24));

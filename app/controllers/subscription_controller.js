@@ -130,18 +130,26 @@ export const handleRevenueCatWebhook = async (req, res) => {
             return errorResponse(res, "Missing app_user_id in webhook", 400);
         }
 
-        // Email ya Numeric ID dono handling
+        // Search candidate identifiers across app_user_id, aliases, and original_app_user_id
         let targetUser = null;
-        if (app_user_id.includes('@')) {
-            console.log("app_user_id looks like an email, searching by email:", app_user_id);
-            targetUser = await User.findOne({ where: { email: app_user_id } });
-        } else {
-            const parsedId = parseInt(app_user_id, 10);
-            console.log("app_user_id treated as numeric ID. Parsed value:", parsedId);
-            if (isNaN(parsedId)) {
-                console.error("❌ app_user_id could not be parsed as a number:", app_user_id);
+        const candidateIdentifiers = [
+            app_user_id,
+            ...(Array.isArray(event.aliases) ? event.aliases : []),
+            event.original_app_user_id
+        ].filter(Boolean);
+
+        for (const idStr of candidateIdentifiers) {
+            const trimmed = String(idStr).trim();
+            if (trimmed.includes('@')) {
+                console.log("Searching user by email identifier:", trimmed);
+                targetUser = await User.findOne({ where: { email: trimmed } });
+                if (targetUser) break;
+            } else if (/^\d+$/.test(trimmed)) {
+                const parsedId = parseInt(trimmed, 10);
+                console.log("Searching user by numeric ID identifier:", parsedId);
+                targetUser = await User.findByPk(parsedId);
+                if (targetUser) break;
             }
-            targetUser = await User.findByPk(parsedId);
         }
 
         if (!targetUser) {
