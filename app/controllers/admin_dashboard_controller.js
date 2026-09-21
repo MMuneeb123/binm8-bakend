@@ -677,7 +677,7 @@ export const getSystemUsers = async (req, res) => {
                 name: user.fullName,
                 email: user.email,
                 membership: membership,
-                membershipStatus: sub.status,
+                membershipStatus: sub ? (sub.status || null) : null,
                 status: user.isActive !== false ? 'Member Active' : 'Inactive',
                 createdAt: user.createdAt
 
