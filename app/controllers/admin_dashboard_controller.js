@@ -290,16 +290,23 @@ export const getDashboardOverview = async (req, res) => {
             where: { createdAt: { [Op.gte]: todayStart } } 
         });
 
-        // Renewals due in next 3 days
+        // Renewals due in next 3 days - count users whose LATEST subscription (by endsAt) is ACTIVE and ends in the window
         const threeDaysLater = new Date();
         threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-        
-        const renewalsDue = await Subscription.count({
-            where: {
-                status: 'ACTIVE',
-                endsAt: { [Op.between]: [new Date(), threeDaysLater] }
+
+        const renewalsRows = await db.sequelize.query(
+            `SELECT COUNT(*)::int AS count FROM (
+                SELECT DISTINCT ON ("userId") "userId", status, "endsAt"
+                FROM "Subscriptions"
+                ORDER BY "userId", "endsAt" DESC
+            ) t
+            WHERE t.status = 'ACTIVE' AND t."endsAt" BETWEEN :now AND :threeDaysLater`,
+            {
+                type: Sequelize.QueryTypes.SELECT,
+                replacements: { now: new Date(), threeDaysLater }
             }
-        });
+        );
+        const renewalsDue = renewalsRows && renewalsRows[0] ? Number(renewalsRows[0].count) : 0;
 
         // --- Main KPI Stats ---
         const totalUsers = await User.count();
@@ -310,14 +317,31 @@ export const getDashboardOverview = async (req, res) => {
             ? (((totalUsers - usersYesterday) / usersYesterday) * 100).toFixed(1) 
             : '0.0';
 
-        const paidUsers = await Subscription.count({ 
-            where: { status: 'ACTIVE' } 
-        });
-        const paidUsersLastWeek = await Subscription.count({
-            where: { status: 'ACTIVE', createdAt: { [Op.lt]: lastWeekStart } }
-        });
-        const paidPercentageChange = paidUsersLastWeek > 0 
-            ? (((paidUsers - paidUsersLastWeek) / paidUsersLastWeek) * 100).toFixed(1) 
+        // Count paid users using their latest subscription record (latest by endsAt)
+        const paidRows = await db.sequelize.query(
+            `SELECT COUNT(*)::int AS count FROM (
+                SELECT DISTINCT ON ("userId") "userId", status, "createdAt", "endsAt"
+                FROM "Subscriptions"
+                ORDER BY "userId", "endsAt" DESC
+            ) t
+            WHERE t.status = 'ACTIVE'`,
+            { type: Sequelize.QueryTypes.SELECT }
+        );
+        const paidUsers = paidRows && paidRows[0] ? Number(paidRows[0].count) : 0;
+
+        // Baseline: number of users whose latest subscription was ACTIVE before `lastWeekStart`
+        const paidLastWeekRows = await db.sequelize.query(
+            `SELECT COUNT(*)::int AS count FROM (
+                SELECT DISTINCT ON ("userId") "userId", status, "createdAt", "endsAt"
+                FROM "Subscriptions"
+                ORDER BY "userId", "endsAt" DESC
+            ) t
+            WHERE t.status = 'ACTIVE' AND t."createdAt" < :lastWeekStart`,
+            { type: Sequelize.QueryTypes.SELECT, replacements: { lastWeekStart } }
+        );
+        const paidUsersLastWeek = paidLastWeekRows && paidLastWeekRows[0] ? Number(paidLastWeekRows[0].count) : 0;
+        const paidPercentageChange = paidUsersLastWeek > 0
+            ? (((paidUsers - paidUsersLastWeek) / paidUsersLastWeek) * 100).toFixed(1)
             : '0.0';
 
         const trialUsers = await Subscription.count({ 
